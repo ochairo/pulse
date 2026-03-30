@@ -23,11 +23,12 @@ Prepare `@ochairo/pulse` for a public `0.2.0` release without changing the curre
 - run `pnpm validate`
 - test package contents with `pnpm pack`
 - verify import behavior from a clean consumer fixture before publishing
+- keep CI running `pnpm validate` on pushes to `main` and pull requests
 
 ### Package Metadata
 
 - repository, homepage, and bugs URLs are currently set to the GitHub `ochairo/pulse` location
-- add a package license file if this package will be published independently from the monorepo root
+- package-local `LICENSE` file is now present for independent publishing
 - review keywords and description against the final public positioning
 
 ### Documentation
