@@ -690,4 +690,78 @@ describe("pulse", () => {
     expect(isPulse(state.user)).toBe(true);
     expect(isPulse({ get() {}, set() {}, on() {} })).toBe(false);
   });
+
+  it("filters array listeners by prop key", () => {
+    const users = pulse([
+      { name: "Ada", age: 30 },
+      { name: "Paul", age: 25 },
+    ]);
+    const nameListener = vi.fn();
+    const allListener = vi.fn();
+
+    users.prop("name").on(nameListener);
+    users.on(allListener);
+
+    users[0]?.set({ name: "Grace", age: 30 });
+
+    expect(nameListener).toHaveBeenCalledTimes(1);
+    expect(allListener).toHaveBeenCalledTimes(1);
+
+    expect(nameListener.mock.calls[0]?.[0].changes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "name" })]),
+    );
+  });
+
+  it("does not call prop key-filtered listener when key does not match", () => {
+    const users = pulse([
+      { name: "Ada", age: 30 },
+      { name: "Paul", age: 25 },
+    ]);
+    const nameListener = vi.fn();
+
+    users.prop("name").on(nameListener);
+
+    users[0]?.age.set(31);
+
+    expect(nameListener).not.toHaveBeenCalled();
+  });
+
+  it("supports prop key filter in batch mode", () => {
+    const state = pulse({
+      users: [
+        { name: "Ada", age: 30 },
+        { name: "Paul", age: 25 },
+      ],
+    });
+    const nameListener = vi.fn();
+    const ageListener = vi.fn();
+
+    state.users.prop("name").on(nameListener);
+    state.users.prop("age").on(ageListener);
+
+    state.batch(() => {
+      state.users[0]?.name.set("Grace");
+      state.users[1]?.age.set(26);
+    });
+
+    expect(nameListener).toHaveBeenCalledTimes(1);
+    expect(ageListener).toHaveBeenCalledTimes(1);
+  });
+
+  it("unsubscribes prop key-filtered listeners correctly", () => {
+    const users = pulse([{ name: "Ada", age: 30 }]);
+    const nameListener = vi.fn();
+
+    const unsubscribe = users.prop("name").on(nameListener);
+
+    users[0]?.name.set("Grace");
+
+    expect(nameListener).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+
+    users[0]?.name.set("Eve");
+
+    expect(nameListener).toHaveBeenCalledTimes(1);
+  });
 });

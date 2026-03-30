@@ -26,58 +26,24 @@ pnpm add @ochairo/pulse
 import { pulse } from "@ochairo/pulse";
 import type { User } from "./types";
 
-const users = pulse<User[]>([{ name: "Ada", age: 30 }, { name: "Paul", age: 25 }]);
+const users = pulse<User[]>([
+  { name: "Mary", age: 30 },
+  { name: "Chloe", age: 25 },
+]);
 
-// Subscribe to the whole array with structural change awareness.
-users.on((event) => {
-  event.previousValue;
-  event.currentValue;
+// Subscribe to "name" mutations only.
+users.prop("name").on((event) =>
+  console.log(event.currentValue)
+);
 
-  const isNameChanged = event.changes.some((change) => change.key === "name");
-
-  if (isNameChanged) {
-    console.log("A user name changed.");
-  }
-});
-
-// Update through normal navigation.
-users[0]?.set({ name: "Grace", age: 30 });
+// Write through navigation.
+users[0]?.name.set("Lois");
 ```
-
-```ts
-// Batch multiple updates with a single notification.
-users.batch(() => {
-  users[0]?.name.set("Ada");
-  users[1]?.age.set(26);
-});
-
-// Reads are also normal.
-users[0]?.get()?.name;
-users.get();
-
-// You can also subscribe to a single item or a single field:
-users[0]?.on((event) => {
-  event.previousValue;
-  event.currentValue;
-});
-
-// Or even a non-plain object leaf:
-users[0]?.name.on((event) => {
-  event.previousValue;
-  event.currentValue;
-});
-
-// Writes through non-plain object branches throw:
-users[0]?.name.set("Grace");
-```
-
-`batch()` exists only on the root pulse. Child paths keep `get()`, `set()`, and `on()`.
 
 ## Documentation
 
-- [Usage](./docs/USAGE.md)
 - [API](./docs/API.md)
-- [Contract](./docs/CONTRACT.md)
+- [Benchmarks](./docs/BENCHMARKS.md)
 
 <br>
 

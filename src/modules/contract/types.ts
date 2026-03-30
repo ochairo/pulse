@@ -25,12 +25,17 @@ export interface PulseChangeEvent<T> {
   changes: readonly PulseMutation[];
 }
 
+export interface PulseKeyView<T> {
+  on(callback: (event: PulseChangeEvent<T>) => void): () => void;
+}
+
 interface PulseCore<T> {
   readonly [PULSE_BRAND]: true;
   get(): T;
   prop<TKey extends PulseChildKey<T>>(
     key: TKey,
   ): Pulse<PulseChildValue<T, TKey>>;
+  prop(key: PropertyKey): PulseKeyView<T>;
   set(nextValue: T): void;
   on(callback: (event: PulseChangeEvent<T>) => void): () => void;
 }

@@ -10,6 +10,8 @@ import {
 } from "./state.js";
 import { writeNodeValue } from "./write.js";
 
+const ARRAY_INDEX_RE = /^\d+$/;
+
 const authenticPulses = new WeakSet<object>();
 
 export function isAuthenticPulse(value: unknown): value is Pulse<unknown> {
@@ -94,9 +96,38 @@ function getNodeGetAccessor<T>(node: PulseNodeState<unknown, T>): () => T {
 
 function getNodePropAccessor<T>(
   node: PulseNodeState<unknown, T>,
-): (key: PropertyKey) => Pulse<unknown> | undefined {
-  node.propAccessor ??= (key: PropertyKey) => readNodeChild(node, key, true);
+): (key: PropertyKey) => unknown {
+  node.propAccessor ??= (key: PropertyKey) => {
+    const currentValue = readNodeValue(node);
+
+    if (Array.isArray(currentValue) && isKeyFilterKey(key)) {
+      return createKeyFilterView(node, key);
+    }
+
+    return readNodeChild(node, key, true);
+  };
   return node.propAccessor;
+}
+
+function isKeyFilterKey(key: PropertyKey): boolean {
+  if (typeof key === "number") {
+    return false;
+  }
+
+  if (typeof key === "symbol") {
+    return true;
+  }
+
+  return key !== "length" && !ARRAY_INDEX_RE.test(key);
+}
+
+function createKeyFilterView<T>(
+  node: PulseNodeState<unknown, T>,
+  key: PropertyKey,
+): unknown {
+  return {
+    on: (listener: PulseListener<T>) => subscribeToNode(node, listener, [key]),
+  };
 }
 
 function getNodeSetAccessor<T>(

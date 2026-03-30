@@ -1,6 +1,6 @@
 # Benchmarks
 
-Generated: 2026-03-30T13:52:10.064Z
+Generated: 2026-03-30T15:30:45.050Z
 
 Environment: Node v25.2.1 on darwin arm64
 
@@ -15,16 +15,16 @@ Store creation and wide-array cases isolate initialization and immutable contain
 
 | Scenario | Average | Iterations |
 | --- | ---: | ---: |
-| root get | 0.000 ms/op | 25000 |
-| deep leaf get | 0.108 ms/op | 10000 |
+| root get | 0.001 ms/op | 25000 |
+| deep leaf get | 0.080 ms/op | 10000 |
 
 ### Focused Writes
 
 | Scenario | Average | Iterations |
 | --- | ---: | ---: |
 | primitive root write | 0.000 ms/op | 10000 |
-| deep leaf write | 0.113 ms/op | 2000 |
-| wide array item replace | 0.383 ms/op | 1000 |
+| deep leaf write | 0.093 ms/op | 2000 |
+| wide array item replace | 0.382 ms/op | 1000 |
 | array leaf field write | 0.001 ms/op | 5000 |
 | array item multi-key replace | 0.001 ms/op | 5000 |
 
@@ -33,41 +33,41 @@ Store creation and wide-array cases isolate initialization and immutable contain
 | Scenario | Average | Iterations |
 | --- | ---: | ---: |
 | sparse array growth | 0.001 ms/op | 2000 |
-| array truncate via length | 0.041 ms/op | 2000 |
-| deep object subtree replace | 0.018 ms/op | 2000 |
+| array truncate via length | 0.038 ms/op | 2000 |
+| deep object subtree replace | 0.013 ms/op | 2000 |
 | whole array multi-row replace | 0.038 ms/op | 1000 |
-| whole array multi-row replace in root batch | 0.047 ms/op | 1000 |
+| whole array multi-row replace in root batch | 0.045 ms/op | 1000 |
 
 ### Subscription Costs
 
 | Scenario | Average | Iterations |
 | --- | ---: | ---: |
-| leaf listener write | 0.004 ms/op | 5000 |
-| item listener write | 0.005 ms/op | 5000 |
-| root listener write | 0.002 ms/op | 5000 |
-| root listener with key filter | 0.003 ms/op | 5000 |
-| root listener with multi-key scan | 0.060 ms/op | 2000 |
-| root listener with multi-key scan in root batch | 0.061 ms/op | 2000 |
+| leaf listener write | 0.002 ms/op | 5000 |
+| item listener write | 0.004 ms/op | 5000 |
+| root listener write | 0.004 ms/op | 5000 |
+| root listener with key filter | 0.001 ms/op | 5000 |
+| root listener with multi-key scan | 0.063 ms/op | 2000 |
+| root listener with multi-key scan in root batch | 0.063 ms/op | 2000 |
 | ancestor listener fanout | 0.002 ms/op | 2000 |
-| ten leaf listeners on same node | 0.007 ms/op | 2000 |
-| hundred leaf listeners on same node | 0.090 ms/op | 1000 |
-| thousand leaf listeners on same node | 0.399 ms/op | 250 |
+| ten leaf listeners on same node | 0.006 ms/op | 2000 |
+| hundred leaf listeners on same node | 0.049 ms/op | 1000 |
+| thousand leaf listeners on same node | 0.376 ms/op | 250 |
 
 ### Editable Table Costs
 
 | Scenario | Average | Iterations |
 | --- | ---: | ---: |
-| 100x730 single cell write | 2.250 ms/op | 1000 |
-| 100x730 single cell write with cell listener | 2.205 ms/op | 1000 |
-| 100x730 single cell write with row listener | 2.226 ms/op | 1000 |
-| 100x730 single cell write with root key filter | 2.487 ms/op | 1000 |
-| 100x730 visible window listeners and cell write | 3.636 ms/op | 250 |
-| 100x730 first month write across first 50 rows | 5.419 ms/op | 100 |
-| 100x730 first month write across first 50 rows in root batch | 5.619 ms/op | 100 |
-| 100x730 first month write across first 50 rows with row listeners | 5.810 ms/op | 100 |
-| 100x730 first month write across first 50 rows with row listeners in root batch | 5.142 ms/op | 100 |
-| 100x730 first month write across first 50 rows with root key filter | 5.618 ms/op | 100 |
-| 100x730 first month write across first 50 rows with root key filter in root batch | 5.558 ms/op | 100 |
+| 100x730 single cell write | 2.237 ms/op | 1000 |
+| 100x730 single cell write with cell listener | 2.240 ms/op | 1000 |
+| 100x730 single cell write with row listener | 2.229 ms/op | 1000 |
+| 100x730 single cell write with root key filter | 2.235 ms/op | 1000 |
+| 100x730 visible window listeners and cell write | 2.916 ms/op | 250 |
+| 100x730 first month write across first 50 rows | 4.962 ms/op | 100 |
+| 100x730 first month write across first 50 rows in root batch | 5.044 ms/op | 100 |
+| 100x730 first month write across first 50 rows with row listeners | 5.385 ms/op | 100 |
+| 100x730 first month write across first 50 rows with row listeners in root batch | 4.884 ms/op | 100 |
+| 100x730 first month write across first 50 rows with root key filter | 5.247 ms/op | 100 |
+| 100x730 first month write across first 50 rows with root key filter in root batch | 4.894 ms/op | 100 |
 
 ## Comparison Suite
 
@@ -84,10 +84,10 @@ Store creation and wide-array cases isolate initialization and immutable contain
 
 | Scenario | Average | Iterations |
 | --- | ---: | ---: |
-| pulse | 0.046 ms/op | 1000 |
+| pulse | 0.047 ms/op | 1000 |
 | Legend-State | 0.161 ms/op | 1000 |
-| MobX | 0.077 ms/op | 1000 |
-| valtio | 0.068 ms/op | 1000 |
+| MobX | 0.078 ms/op | 1000 |
+| valtio | 0.064 ms/op | 1000 |
 
 ### Array Item Field Write
 
@@ -103,9 +103,9 @@ Store creation and wide-array cases isolate initialization and immutable contain
 | Scenario | Average | Iterations |
 | --- | ---: | ---: |
 | pulse | 0.010 ms/op | 1000 |
-| Legend-State | 0.025 ms/op | 1000 |
-| MobX | 0.504 ms/op | 1000 |
-| valtio | 0.689 ms/op | 1000 |
+| Legend-State | 0.027 ms/op | 1000 |
+| MobX | 0.505 ms/op | 1000 |
+| valtio | 0.684 ms/op | 1000 |
 
 ### Store Creation Cost
 
@@ -113,25 +113,25 @@ Store creation and wide-array cases isolate initialization and immutable contain
 | --- | ---: | ---: |
 | pulse | 0.004 ms/op | 1000 |
 | Legend-State | 0.004 ms/op | 1000 |
-| MobX | 0.274 ms/op | 1000 |
-| valtio | 0.292 ms/op | 1000 |
+| MobX | 0.280 ms/op | 1000 |
+| valtio | 0.288 ms/op | 1000 |
 
 ### Wide Array Item Replace
 
 | Scenario | Average | Iterations |
 | --- | ---: | ---: |
-| pulse | 0.478 ms/op | 1000 |
-| Legend-State | 0.478 ms/op | 1000 |
-| MobX | 24.347 ms/op | 1000 |
-| valtio | 31.015 ms/op | 1000 |
+| pulse | 0.480 ms/op | 1000 |
+| Legend-State | 0.482 ms/op | 1000 |
+| MobX | 24.429 ms/op | 1000 |
+| valtio | 30.638 ms/op | 1000 |
 
 ### Root Subscription Write
 
 | Scenario | Average | Iterations |
 | --- | ---: | ---: |
-| pulse | 0.001 ms/op | 5000 |
-| Legend-State | 0.005 ms/op | 5000 |
-| MobX | 0.003 ms/op | 5000 |
+| pulse | 0.004 ms/op | 5000 |
+| Legend-State | 0.003 ms/op | 5000 |
+| MobX | 0.014 ms/op | 5000 |
 | valtio | 0.002 ms/op | 5000 |
 
 ### Leaf Subscription Write
@@ -139,42 +139,42 @@ Store creation and wide-array cases isolate initialization and immutable contain
 | Scenario | Average | Iterations |
 | --- | ---: | ---: |
 | pulse | 0.002 ms/op | 5000 |
-| Legend-State | 0.006 ms/op | 5000 |
+| Legend-State | 0.007 ms/op | 5000 |
 | MobX | 0.008 ms/op | 5000 |
-| valtio | 0.005 ms/op | 5000 |
+| valtio | 0.006 ms/op | 5000 |
 
 ### Editable Table Costs
 
 | Scenario | Average | Iterations |
 | --- | ---: | ---: |
-| pulse 100x730 single cell write | 0.005 ms/op | 2000 |
+| pulse 100x730 single cell write | 0.002 ms/op | 2000 |
 | Legend-State 100x730 single cell write | 0.006 ms/op | 2000 |
 | MobX 100x730 single cell write | 0.001 ms/op | 2000 |
 | valtio 100x730 single cell write | 0.000 ms/op | 2000 |
-| pulse 100x730 single cell write with cell listener | 0.007 ms/op | 2000 |
-| Legend-State 100x730 single cell write with cell listener | 0.006 ms/op | 2000 |
+| pulse 100x730 single cell write with cell listener | 0.002 ms/op | 2000 |
+| Legend-State 100x730 single cell write with cell listener | 0.010 ms/op | 2000 |
 | MobX 100x730 single cell write with cell listener | 0.001 ms/op | 2000 |
-| valtio 100x730 single cell write with cell listener | 0.001 ms/op | 2000 |
-| pulse 100x730 single cell write with row listener | 0.002 ms/op | 2000 |
+| valtio 100x730 single cell write with cell listener | 0.000 ms/op | 2000 |
+| pulse 100x730 single cell write with row listener | 0.006 ms/op | 2000 |
 | Legend-State 100x730 single cell write with row listener | 0.006 ms/op | 2000 |
-| MobX 100x730 single cell write with row listener | 0.161 ms/op | 500 |
+| MobX 100x730 single cell write with row listener | 0.159 ms/op | 500 |
 | valtio 100x730 single cell write with row listener | 0.000 ms/op | 1000 |
-| pulse 100x730 single cell write with root listener | 0.010 ms/op | 1000 |
-| Legend-State 100x730 single cell write with root listener | 0.006 ms/op | 1000 |
-| MobX 100x730 single cell write with root listener | 18.444 ms/op | 50 |
+| pulse 100x730 single cell write with root listener | 0.002 ms/op | 1000 |
+| Legend-State 100x730 single cell write with root listener | 0.014 ms/op | 1000 |
+| MobX 100x730 single cell write with root listener | 19.173 ms/op | 50 |
 | valtio 100x730 single cell write with root listener | 0.001 ms/op | 100 |
 | pulse 100x730 visible window listeners and cell write | 0.002 ms/op | 500 |
 | Legend-State 100x730 visible window listeners and cell write | 0.006 ms/op | 500 |
 | MobX 100x730 visible window listeners and cell write | 0.001 ms/op | 200 |
 | valtio 100x730 visible window listeners and cell write | 0.000 ms/op | 250 |
-| pulse 100x730 first month write across first 50 rows | 1.687 ms/op | 50 |
-| Legend-State 100x730 first month write across first 50 rows | 7.942 ms/op | 50 |
-| MobX 100x730 first month write across first 50 rows | 0.632 ms/op | 50 |
-| valtio 100x730 first month write across first 50 rows | 0.508 ms/op | 50 |
-| pulse 100x730 first month write across first 50 rows with row listeners | 1.786 ms/op | 50 |
-| Legend-State 100x730 first month write across first 50 rows with row listeners | 8.076 ms/op | 50 |
-| MobX 100x730 first month write across first 50 rows with row listeners | 9.476 ms/op | 25 |
-| valtio 100x730 first month write across first 50 rows with row listeners | 3.945 ms/op | 25 |
+| pulse 100x730 first month write across first 50 rows | 2.957 ms/op | 50 |
+| Legend-State 100x730 first month write across first 50 rows | 7.896 ms/op | 50 |
+| MobX 100x730 first month write across first 50 rows | 0.635 ms/op | 50 |
+| valtio 100x730 first month write across first 50 rows | 0.461 ms/op | 50 |
+| pulse 100x730 first month write across first 50 rows with row listeners | 1.744 ms/op | 50 |
+| Legend-State 100x730 first month write across first 50 rows with row listeners | 9.457 ms/op | 50 |
+| MobX 100x730 first month write across first 50 rows with row listeners | 9.439 ms/op | 25 |
+| valtio 100x730 first month write across first 50 rows with row listeners | 0.560 ms/op | 25 |
 
 ## Comparison Summary
 
@@ -191,22 +191,22 @@ Category Wins is shown separately as a breadth signal.
 | Category | pulse | Legend-State | MobX | valtio | Winner |
 | --- | ---: | ---: | ---: | ---: | --- |
 | Primitive Root Write | 0.001 ms/op | 0.001 ms/op | 0.000 ms/op | 0.001 ms/op | MobX |
-| Deep Nested Leaf Write | 0.046 ms/op | 0.161 ms/op | 0.077 ms/op | 0.068 ms/op | pulse |
-| Array Item Field Write | 0.004 ms/op | 0.004 ms/op | 0.008 ms/op | 0.012 ms/op | Legend-State |
-| Whole Array Multi-Row Replace | 0.010 ms/op | 0.025 ms/op | 0.504 ms/op | 0.689 ms/op | pulse |
-| Store Creation Cost | 0.004 ms/op | 0.004 ms/op | 0.274 ms/op | 0.292 ms/op | Legend-State |
-| Wide Array Item Replace | 0.478 ms/op | 0.478 ms/op | 24.347 ms/op | 31.015 ms/op | Legend-State |
-| Root Subscription Write | 0.001 ms/op | 0.005 ms/op | 0.003 ms/op | 0.002 ms/op | pulse |
-| Leaf Subscription Write | 0.002 ms/op | 0.006 ms/op | 0.008 ms/op | 0.005 ms/op | pulse |
-| Editable Table Costs | 0.022 ms/op | 0.046 ms/op | 0.066 ms/op | 0.005 ms/op | valtio |
+| Deep Nested Leaf Write | 0.047 ms/op | 0.161 ms/op | 0.078 ms/op | 0.064 ms/op | pulse |
+| Array Item Field Write | 0.004 ms/op | 0.004 ms/op | 0.008 ms/op | 0.012 ms/op | pulse |
+| Whole Array Multi-Row Replace | 0.010 ms/op | 0.027 ms/op | 0.505 ms/op | 0.684 ms/op | pulse |
+| Store Creation Cost | 0.004 ms/op | 0.004 ms/op | 0.280 ms/op | 0.288 ms/op | Legend-State |
+| Wide Array Item Replace | 0.480 ms/op | 0.482 ms/op | 24.429 ms/op | 30.638 ms/op | pulse |
+| Root Subscription Write | 0.004 ms/op | 0.003 ms/op | 0.014 ms/op | 0.002 ms/op | valtio |
+| Leaf Subscription Write | 0.002 ms/op | 0.007 ms/op | 0.008 ms/op | 0.006 ms/op | pulse |
+| Editable Table Costs | 0.016 ms/op | 0.056 ms/op | 0.066 ms/op | 0.003 ms/op | valtio |
 
 ### Category Breadth
 
 | Library | Category Wins |
 | --- | ---: |
-| pulse | 4 |
-| Legend-State | 3 |
-| valtio | 1 |
+| pulse | 5 |
+| valtio | 2 |
+| Legend-State | 1 |
 | MobX | 1 |
 
 Most category wins: pulse
@@ -215,10 +215,10 @@ Most category wins: pulse
 
 | Library | Category Wins | Equal-Category Score |
 | --- | ---: | ---: |
-| pulse | 4 | 0.008 ms/op |
-| Legend-State | 3 | 0.015 ms/op |
-| valtio | 1 | 0.040 ms/op |
-| MobX | 1 | 0.047 ms/op |
+| pulse | 5 | 0.009 ms/op |
+| Legend-State | 1 | 0.015 ms/op |
+| valtio | 2 | 0.038 ms/op |
+| MobX | 1 | 0.056 ms/op |
 
 Equal-category overall winner: pulse
 
@@ -226,10 +226,10 @@ Equal-category overall winner: pulse
 
 | Library | Category Wins | Scenario-Weighted Score |
 | --- | ---: | ---: |
-| pulse | 4 | 0.012 ms/op |
-| valtio | 1 | 0.017 ms/op |
-| Legend-State | 3 | 0.024 ms/op |
-| MobX | 1 | 0.053 ms/op |
+| pulse | 5 | 0.011 ms/op |
+| valtio | 2 | 0.014 ms/op |
+| Legend-State | 1 | 0.026 ms/op |
+| MobX | 1 | 0.060 ms/op |
 
 Scenario-weighted overall winner: pulse
 

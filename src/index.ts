@@ -3,6 +3,7 @@ export { isPulse, pulse } from "./modules/public/pulse.js";
 export {
   type Pulse,
   type PulseChangeEvent,
+  type PulseKeyView,
   type PulseMutation,
   type PulseMutationDelete,
   type PulseMutationSet,
