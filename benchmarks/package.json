@@ -1,0 +1,15 @@
+{
+  "name": "@ochairo/pulse-benchmarks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "pulse": "node ./runtime.mjs",
+    "compare": "node ./compare.mjs",
+    "report": "node ./report.mjs"
+  },
+  "dependencies": {
+    "@legendapp/state": "beta",
+    "mobx": "^6.13.7",
+    "valtio": "^2.3.1"
+  }
+}

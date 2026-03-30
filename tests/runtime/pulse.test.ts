@@ -40,6 +40,7 @@ describe("pulse", () => {
         {
           kind: "replace",
           path: ["user", "name"],
+          key: "name",
           value: "Grace",
           previousValue: "Ada",
         },
@@ -65,6 +66,7 @@ describe("pulse", () => {
         {
           kind: "replace",
           path: ["user", "role"],
+          key: "role",
           value: "editor",
           previousValue: "admin",
         },
@@ -94,6 +96,7 @@ describe("pulse", () => {
         {
           kind: "set",
           path: ["rows", 0],
+          key: 0,
           value: { name: "Ada" },
           previousValue: undefined,
         },
@@ -149,6 +152,7 @@ describe("pulse", () => {
         {
           kind: "replace",
           path: ["length"],
+          key: "length",
           value: 2,
           previousValue: 1,
         },
@@ -173,6 +177,7 @@ describe("pulse", () => {
         {
           kind: "replace",
           path: ["meta", "length"],
+          key: "length",
           value: 2,
           previousValue: 1,
         },
@@ -196,6 +201,7 @@ describe("pulse", () => {
         {
           kind: "delete",
           path: [2],
+          key: 2,
           previousValue: "Lin",
         },
       ],
@@ -217,16 +223,19 @@ describe("pulse", () => {
         {
           kind: "delete",
           path: [1],
+          key: 1,
           previousValue: "Grace",
         },
         {
           kind: "delete",
           path: [2],
+          key: 2,
           previousValue: "Lin",
         },
         {
           kind: "replace",
           path: ["length"],
+          key: "length",
           value: 1,
           previousValue: 3,
         },
@@ -265,6 +274,36 @@ describe("pulse", () => {
     expect(lateListener).toHaveBeenCalledTimes(1);
   });
 
+  it("continues notifying remaining listeners after a listener throws", () => {
+    const count = pulse(0);
+    const listenerError = new Error("listener failed");
+    const secondListener = vi.fn();
+
+    count.on(() => {
+      throw listenerError;
+    });
+    count.on(secondListener);
+
+    expect(() => count.set(1)).toThrow(listenerError);
+    expect(secondListener).toHaveBeenCalledTimes(1);
+    expect(count.get()).toBe(1);
+  });
+
+  it("continues notifying later nodes after an earlier node listener throws", () => {
+    const state = pulse({ user: { name: "Ada" } });
+    const listenerError = new Error("root listener failed");
+    const leafListener = vi.fn();
+
+    state.on(() => {
+      throw listenerError;
+    });
+    state.user.name.on(leafListener);
+
+    expect(() => state.user.name.set("Grace")).toThrow(listenerError);
+    expect(leafListener).toHaveBeenCalledTimes(1);
+    expect(state.user.name.get()).toBe("Grace");
+  });
+
   it("does not notify on Object.is-equal writes", () => {
     const count = pulse(0);
     const listener = vi.fn();
@@ -293,6 +332,175 @@ describe("pulse", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it("batches multiple writes into one root notification", () => {
+    const state = pulse({ user: { name: "Ada", age: 30 } });
+    const rootListener = vi.fn();
+    const nameListener = vi.fn();
+
+    state.on(rootListener);
+    state.user.name.on(nameListener);
+
+    state.batch(() => {
+      state.user.name.set("Grace");
+      state.user.age.set(31);
+    });
+
+    expect(rootListener).toHaveBeenCalledTimes(1);
+    expect(rootListener).toHaveBeenCalledWith({
+      currentValue: { user: { name: "Grace", age: 31 } },
+      previousValue: { user: { name: "Ada", age: 30 } },
+      changes: [
+        {
+          kind: "replace",
+          path: ["user", "name"],
+          key: "name",
+          value: "Grace",
+          previousValue: "Ada",
+        },
+        {
+          kind: "replace",
+          path: ["user", "age"],
+          key: "age",
+          value: 31,
+          previousValue: 30,
+        },
+      ],
+    });
+    expect(nameListener).toHaveBeenCalledTimes(1);
+    expect(nameListener).toHaveBeenCalledWith({
+      currentValue: "Grace",
+      previousValue: "Ada",
+      changes: [
+        {
+          kind: "replace",
+          path: ["user", "name"],
+          key: "name",
+          value: "Grace",
+          previousValue: "Ada",
+        },
+      ],
+    });
+  });
+
+  it("defers listener dispatch until the batch completes", () => {
+    const state = pulse({ user: { name: "Ada", age: 30 } });
+    const listener = vi.fn();
+
+    state.on(listener);
+
+    state.batch(() => {
+      state.user.name.set("Grace");
+
+      expect(state.user.name.get()).toBe("Grace");
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("collapses nested batches into a single flush", () => {
+    const state = pulse({ count: 0, total: 0 });
+    const listener = vi.fn();
+
+    state.on(listener);
+
+    state.batch(() => {
+      state.count.set(1);
+
+      state.batch(() => {
+        state.total.set(2);
+      });
+    });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({
+      currentValue: { count: 1, total: 2 },
+      previousValue: { count: 0, total: 0 },
+      changes: [
+        {
+          kind: "replace",
+          path: ["count"],
+          key: "count",
+          value: 1,
+          previousValue: 0,
+        },
+        {
+          kind: "replace",
+          path: ["total"],
+          key: "total",
+          value: 2,
+          previousValue: 0,
+        },
+      ],
+    });
+  });
+
+  it("returns the callback result from batch", () => {
+    const state = pulse({ count: 0 });
+
+    const result = state.batch(() => {
+      state.count.set(1);
+      return state.count.get();
+    });
+
+    expect(result).toBe(1);
+  });
+
+  it("flushes notifications before rethrowing a batch callback error", () => {
+    const state = pulse({ count: 0 });
+    const listener = vi.fn();
+    const callbackError = new Error("callback failed");
+
+    state.on(listener);
+
+    expect(() =>
+      state.batch(() => {
+        state.count.set(1);
+        throw callbackError;
+      }),
+    ).toThrow(callbackError);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(state.count.get()).toBe(1);
+  });
+
+  it("does not expose batch() on child paths", () => {
+    const state = pulse({ user: { name: "Ada" } });
+
+    expect(
+      (state.user as unknown as Record<string, unknown>).batch,
+    ).toBeUndefined();
+  });
+
+  it("does not batch writes to other roots", () => {
+    const users = pulse({ count: 0 });
+    const settings = pulse({ theme: "light" });
+    const settingsListener = vi.fn();
+
+    settings.on(settingsListener);
+
+    users.batch(() => {
+      settings.theme.set("dark");
+
+      expect(settingsListener).toHaveBeenCalledTimes(1);
+      expect(settings.theme.get()).toBe("dark");
+
+      users.count.set(1);
+    });
+
+    expect(users.count.get()).toBe(1);
+    expect(settingsListener).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a root property named batch accessible through prop()", () => {
+    const state = pulse({ batch: 1, user: { name: "Ada" } });
+
+    state.prop("batch").set(2);
+
+    expect(state.prop("batch").get()).toBe(2);
+    expect(state.get()).toEqual({ batch: 2, user: { name: "Ada" } });
+  });
+
   it("treats function-valued fields as atomic leaves", () => {
     const previousAction = vi.fn();
     const nextAction = vi.fn();
@@ -319,6 +527,7 @@ describe("pulse", () => {
         {
           kind: "replace",
           path: ["user", "action"],
+          key: "action",
           value: nextAction,
           previousValue: previousAction,
         },
@@ -349,6 +558,7 @@ describe("pulse", () => {
         {
           kind: "replace",
           path: ["meta", "createdAt"],
+          key: "createdAt",
           value: nextCreatedAt,
           previousValue: createdAt,
         },
@@ -382,6 +592,7 @@ describe("pulse", () => {
         {
           kind: "replace",
           path: ["meta", "counter"],
+          key: "counter",
           value: nextCounter,
           previousValue: counter,
         },
@@ -391,12 +602,23 @@ describe("pulse", () => {
 
   it("throws when writing through non-plain object branches", () => {
     const state = pulse({
-      meta: { createdAt: new Date("2024-01-01T00:00:00Z") },
+      meta: undefined as { createdAt: Date } | undefined,
     }) as unknown as {
-      meta: { createdAt: Record<string, { set(nextValue: unknown): void }> };
+      meta: {
+        set(nextValue: { createdAt: Date }): void;
+        createdAt: { time: { set(nextValue: number): void } };
+      };
     };
 
-    expect(state.meta.createdAt.time).toBeUndefined();
+    const time = state.meta.createdAt.time;
+
+    state.meta.set({
+      createdAt: new Date("2024-01-01T00:00:00Z"),
+    });
+
+    expect(() => time.set(1)).toThrow(
+      "Cannot write through non-traversable value at meta.createdAt.",
+    );
   });
 
   it("keeps promise-like property names reserved", async () => {
@@ -411,6 +633,54 @@ describe("pulse", () => {
     expect(state.catch).toBeUndefined();
     expect(state.finally).toBeUndefined();
     await expect(Promise.resolve(state)).resolves.toBe(state);
+  });
+
+  it("supports prop() for reserved keys and symbol keys", () => {
+    const token = Symbol("token");
+    const state = pulse({
+      get: 1,
+      set: 2,
+      on: 3,
+      prop: 4,
+      then: 5,
+      catch: 6,
+      finally: 7,
+      [token]: 8,
+    });
+
+    expect(state.prop("get").get()).toBe(1);
+    expect(state.prop("set").get()).toBe(2);
+    expect(state.prop("on").get()).toBe(3);
+    expect(state.prop("prop").get()).toBe(4);
+    expect(state.prop("then").get()).toBe(5);
+    expect(state.prop("catch").get()).toBe(6);
+    expect(state.prop("finally").get()).toBe(7);
+    expect(state.prop(token).get()).toBe(8);
+
+    state.prop("then").set(9);
+    state.prop(token).set(10);
+
+    expect(state.get()).toEqual({
+      get: 1,
+      set: 2,
+      on: 3,
+      prop: 4,
+      then: 9,
+      catch: 6,
+      finally: 7,
+      [token]: 10,
+    });
+  });
+
+  it("supports prop() for array indexes and length", () => {
+    const rows = pulse([{ title: "A" }]);
+
+    rows.prop(0).set({ title: "B" });
+    rows.prop("length").set(2);
+
+    expect(rows.prop(0).get()).toEqual({ title: "B" });
+    expect(rows.prop("length").get()).toBe(2);
+    expect(rows.get()).toEqual([{ title: "B" }, undefined]);
   });
 
   it("is recognized by isPulse", () => {

@@ -12,11 +12,19 @@ const dateState = pulse({ meta: { createdAt: new Date() } });
 const mapState = pulse({ meta: { items: new Map<string, number>() } });
 const objectLengthState = pulse({ meta: { length: 1 } });
 const promiseKeyState = pulse({ then: 1, catch: 2, finally: 3 });
+const reservedKeyState = pulse({ get: 1, set: 2, on: 3, prop: 4 });
+const rootReservedKeyState = pulse({ batch: 5 });
+const symbolKey = Symbol("count");
+const symbolState = pulse({ [symbolKey]: { count: 1 } });
 
 expectTypeOf(count.get()).toEqualTypeOf<number>();
 expectTypeOf(state.user.name.get()).toEqualTypeOf<string>();
 expectTypeOf(state.rows.length.get()).toEqualTypeOf<number>();
-expectTypeOf(state.rows[0]).toEqualTypeOf<
+expectTypeOf(state.rows.prop(0).get()).toEqualTypeOf<
+  { id: number } | undefined
+>();
+expectTypeOf(state.rows.prop("length").get()).toEqualTypeOf<number>();
+expectTypeOf(state.rows[0]).toMatchTypeOf<
   Pulse<{ id: number } | undefined> | undefined
 >();
 expectTypeOf(state.rows[0]!.get()).toEqualTypeOf<{ id: number } | undefined>();
@@ -28,11 +36,18 @@ expectTypeOf(actionState.user.action.get()).toEqualTypeOf<() => void>();
 expectTypeOf(dateState.meta.createdAt.get()).toEqualTypeOf<Date>();
 expectTypeOf(mapState.meta.items.get()).toEqualTypeOf<Map<string, number>>();
 expectTypeOf(objectLengthState.meta.length.get()).toEqualTypeOf<number>();
+expectTypeOf(reservedKeyState.prop("get").get()).toEqualTypeOf<number>();
+expectTypeOf(reservedKeyState.prop("set").get()).toEqualTypeOf<number>();
+expectTypeOf(reservedKeyState.prop("on").get()).toEqualTypeOf<number>();
+expectTypeOf(reservedKeyState.prop("prop").get()).toEqualTypeOf<number>();
+expectTypeOf(promiseKeyState.prop("then").get()).toEqualTypeOf<number>();
+expectTypeOf(symbolState.prop(symbolKey).count.get()).toEqualTypeOf<number>();
 
 count.on((event) => {
   expectTypeOf(event).toEqualTypeOf<PulseChangeEvent<number>>();
   expectTypeOf(event.currentValue).toEqualTypeOf<number>();
   expectTypeOf(event.previousValue).toEqualTypeOf<number>();
+  expectTypeOf(event.changes[0]?.key).toEqualTypeOf<PropertyKey | undefined>();
 });
 
 state.user.name.on((event) => {
@@ -42,8 +57,15 @@ state.user.name.on((event) => {
 const typedCount: Pulse<number> = count;
 void typedCount;
 
+expectTypeOf(count.batch(() => count.get())).toEqualTypeOf<number>();
+expectTypeOf(rootReservedKeyState.batch).toBeFunction();
+expectTypeOf(rootReservedKeyState.prop("batch").get()).toEqualTypeOf<number>();
+
 // @ts-expect-error optional branches must be narrowed before deep access
 maybeState.user.name;
+
+// @ts-expect-error batch is only available on root pulses
+state.user.batch;
 
 // @ts-expect-error open-ended array elements must be narrowed before deep access
 state.rows[0].id;
@@ -65,6 +87,9 @@ promiseKeyState.catch;
 
 // @ts-expect-error promise-like keys are reserved to avoid thenable collisions
 promiseKeyState.finally;
+
+// @ts-expect-error prop is reserved on pulse nodes and must be accessed with .prop("prop")
+reservedKeyState.prop.prop;
 
 const fakePulse = {
   get() {

@@ -1,0 +1,15 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "benchmark-report",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"benchmark:report"
+			],
+			"isBackground": false,
+			"group": "build"
+		}
+	]
+}

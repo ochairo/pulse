@@ -5,6 +5,7 @@ export type PulsePath = readonly PropertyKey[];
 export interface PulseMutationSet {
   kind: "set" | "replace";
   path: PulsePath;
+  key: PropertyKey | undefined;
   value: unknown;
   previousValue: unknown;
 }
@@ -12,6 +13,7 @@ export interface PulseMutationSet {
 export interface PulseMutationDelete {
   kind: "delete";
   path: PulsePath;
+  key: PropertyKey | undefined;
   previousValue: unknown;
 }
 
@@ -26,11 +28,27 @@ export interface PulseChangeEvent<T> {
 interface PulseCore<T> {
   readonly [PULSE_BRAND]: true;
   get(): T;
+  prop<TKey extends PulseChildKey<T>>(
+    key: TKey,
+  ): Pulse<PulseChildValue<T, TKey>>;
   set(nextValue: T): void;
   on(callback: (event: PulseChangeEvent<T>) => void): () => void;
 }
 
-type ReservedPulseKey = "get" | "set" | "on" | "then" | "catch" | "finally";
+interface RootPulseCore<T> extends PulseCore<T> {
+  batch<TResult>(callback: () => TResult): TResult;
+}
+
+type ReservedPulseKey =
+  | "get"
+  | "set"
+  | "on"
+  | "prop"
+  | "then"
+  | "catch"
+  | "finally";
+
+type ReservedRootPulseKey = ReservedPulseKey | "batch";
 
 type AtomicPulseObject =
   | Date
@@ -69,6 +87,43 @@ type IsTuple<TTuple extends readonly unknown[]> =
 type PulseArrayElement<TArray extends readonly unknown[]> =
   IsTuple<TArray> extends true ? TArray[number] : TArray[number] | undefined;
 
+type PulseArrayChildValue<
+  TArray extends readonly unknown[],
+  TKey extends PropertyKey,
+> = TKey extends "length"
+  ? TArray["length"]
+  : IsTuple<TArray> extends true
+    ? TKey extends keyof TArray
+      ? TArray[TKey]
+      : TKey extends number
+        ? PulseArrayElement<TArray>
+        : never
+    : TKey extends number
+      ? PulseArrayElement<TArray>
+      : never;
+
+type PulseChildKey<T> = T extends readonly unknown[]
+  ? TupleIndexKeys<T> | number | "length"
+  : T extends (...args: infer _Args) => unknown
+    ? never
+    : T extends AtomicPulseObject
+      ? never
+      : T extends object
+        ? keyof T
+        : never;
+
+type PulseChildValue<T, TKey extends PropertyKey> = T extends readonly unknown[]
+  ? PulseArrayChildValue<T, TKey>
+  : T extends (...args: infer _Args) => unknown
+    ? never
+    : T extends AtomicPulseObject
+      ? never
+      : T extends object
+        ? TKey extends keyof T
+          ? T[TKey]
+          : never
+        : never;
+
 type PulseArrayShape<TArray extends readonly unknown[]> = {
   readonly [index: number]: Pulse<PulseArrayElement<TArray>>;
   readonly length: Pulse<TArray["length"]>;
@@ -84,6 +139,12 @@ type PulseObjectShape<TValue extends object> = {
   >;
 };
 
+type RootPulseObjectShape<TValue extends object> = {
+  readonly [TKey in Exclude<keyof TValue, ReservedRootPulseKey>]-?: Pulse<
+    TValue[TKey]
+  >;
+};
+
 type PulseShape<T> = T extends readonly unknown[]
   ? PulseArrayShape<T>
   : T extends (...args: infer _Args) => unknown
@@ -94,4 +155,15 @@ type PulseShape<T> = T extends readonly unknown[]
         ? PulseObjectShape<T>
         : {};
 
+type RootPulseShape<T> = T extends readonly unknown[]
+  ? PulseArrayShape<T>
+  : T extends (...args: infer _Args) => unknown
+    ? {}
+    : T extends AtomicPulseObject
+      ? {}
+      : T extends object
+        ? RootPulseObjectShape<T>
+        : {};
+
 export type Pulse<T> = PulseCore<T> & PulseShape<T>;
+export type InternalRootPulse<T> = RootPulseCore<T> & RootPulseShape<T>;

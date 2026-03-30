@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="104 52 304 176" role="img" aria-labelledby="title desc">
+  <title id="title">pulse logo Tokyo Night warm</title>
+  <desc id="desc">A clean pulse waveform mark using Tokyo Night orange, yellow, and pink accents.</desc>
+  <defs>
+    <linearGradient id="wave" x1="120" y1="128" x2="392" y2="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF9E64" />
+      <stop offset="0.5" stop-color="#E0AF68" />
+      <stop offset="1" stop-color="#F7768E" />
+    </linearGradient>
+  </defs>
+  <path
+    d="M120 152h72l28-56 40 118 52-148 28 86h52"
+    fill="none"
+    stroke="url(#wave)"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="22"
+  />
+</svg>
