@@ -75,9 +75,16 @@ describe("pulse", () => {
   it("notifies descendants when a missing ancestor branch becomes defined", () => {
     const state = pulse({ rows: [] as Array<{ name: string }> });
     const listener = vi.fn();
+    const rows = state.rows as unknown as Record<
+      number,
+      {
+        name: { on(callback: (value: unknown) => void): void };
+        set(nextValue: { name: string }): void;
+      }
+    >;
 
-    state.rows[0].name.on(listener);
-    state.rows[0].set({ name: "Ada" });
+    rows[0].name.on(listener);
+    rows[0].set({ name: "Ada" });
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenCalledWith({
