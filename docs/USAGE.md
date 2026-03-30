@@ -18,6 +18,7 @@ state.user.name.on((event) => {
 
 state.user.name.set("Grace");
 state.get();
+state.rows[0]?.get()?.title;
 ```
 
 ## Parent Listeners
@@ -67,6 +68,8 @@ rows[1].set({ title: "B" });
 ## Boundaries
 
 - use plain objects and arrays for deep traversal
-- treat `Date`, `Map`, `Set`, and class instances as atomic values
-- expect open-ended array indexes to follow TypeScript `noUncheckedIndexedAccess` rules
-- avoid state keys named `get`, `set`, or `on` when you need dot-property pulse access
+- treat functions, `Date`, `Map`, `Set`, and class instances as atomic values that do not expose child pulse nodes
+- plain object keys named `length` remain ordinary properties; only arrays expose reactive `length`
+- expect open-ended array indexes to follow TypeScript `noUncheckedIndexedAccess` rules, which means indexed element pulses resolve to `T | undefined` until narrowed
+- avoid state keys named `get`, `set`, `on`, `then`, `catch`, or `finally` when you need those child pulse nodes to remain available
+- for custom class instances, prefer interacting through `get()` and `set()` even if TypeScript still offers structural property access on the instance type

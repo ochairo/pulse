@@ -1,6 +1,7 @@
 import type { PulseMutation, PulsePath } from "../types.js";
 
 const MISSING = Symbol("pulse.missing");
+const ARRAY_LENGTH_SEGMENT = Symbol("pulse.array-length");
 
 type ValueState =
   | { readonly exists: false; readonly value: typeof MISSING }
@@ -10,6 +11,10 @@ const MISSING_VALUE_STATE: ValueState = { exists: false, value: MISSING };
 
 export type { PulsePath };
 
+export function canTraversePulseValue(value: unknown): boolean {
+  return value === undefined || Array.isArray(value) || isPlainObject(value);
+}
+
 export function normalizeChildKey(
   currentValue: unknown,
   property: PropertyKey,
@@ -18,11 +23,17 @@ export function normalizeChildKey(
     return property;
   }
 
-  if (property === "length") {
-    return property;
+  if (Array.isArray(currentValue)) {
+    if (property === "length") {
+      return ARRAY_LENGTH_SEGMENT;
+    }
+
+    if (isArrayIndexString(property)) {
+      return Number(property);
+    }
   }
 
-  if (Array.isArray(currentValue) && isArrayIndexString(property)) {
+  if (currentValue === undefined && isArrayIndexString(property)) {
     return Number(property);
   }
 
@@ -76,6 +87,10 @@ export function formatPulsePath(path: PulsePath): string {
 
   return path
     .map((segment) => {
+      if (segment === ARRAY_LENGTH_SEGMENT) {
+        return ".length";
+      }
+
       if (typeof segment === "number") {
         return `[${segment}]`;
       }
@@ -92,6 +107,27 @@ export function formatPulsePath(path: PulsePath): string {
     .replace(/^\./u, "");
 }
 
+export function toPublicPulseMutation(mutation: PulseMutation): PulseMutation {
+  const path = mutation.path.map((segment) =>
+    segment === ARRAY_LENGTH_SEGMENT ? "length" : segment,
+  );
+
+  if (mutation.kind === "delete") {
+    return {
+      kind: mutation.kind,
+      path,
+      previousValue: mutation.previousValue,
+    };
+  }
+
+  return {
+    kind: mutation.kind,
+    path,
+    value: mutation.value,
+    previousValue: mutation.previousValue,
+  };
+}
+
 function writeValueAtPath(
   currentValue: unknown,
   path: PulsePath,
@@ -103,7 +139,7 @@ function writeValueAtPath(
     return nextValue;
   }
 
-  if (segment === "length") {
+  if (segment === ARRAY_LENGTH_SEGMENT) {
     if (restPath.length > 0) {
       throw new TypeError(
         `Cannot write below array length at ${formatPulsePath(traversedPath)}.`,
@@ -256,7 +292,7 @@ function collectArrayMutations(
   if (previousArrayValue.length !== currentArrayValue.length) {
     mutations.push({
       kind: "replace",
-      path: [...path, "length"],
+      path: [...path, ARRAY_LENGTH_SEGMENT],
       value: currentArrayValue.length,
       previousValue: previousArrayValue.length,
     });
@@ -311,7 +347,7 @@ function readValueStateAtPath(rootValue: unknown, path: PulsePath): ValueState {
       return currentState;
     }
 
-    if (segment === "length") {
+    if (segment === ARRAY_LENGTH_SEGMENT) {
       if (!Array.isArray(currentState.value)) {
         return MISSING_VALUE_STATE;
       }
@@ -361,7 +397,7 @@ function readOwnValue(
 }
 
 function readChildValue(currentValue: unknown, segment: PropertyKey): unknown {
-  if (segment === "length") {
+  if (segment === ARRAY_LENGTH_SEGMENT) {
     return Array.isArray(currentValue) ? currentValue.length : undefined;
   }
 
@@ -390,9 +426,7 @@ function cloneWritableContainer(
   }
 
   if (currentValue === undefined) {
-    return nextSegment === "length" || typeof nextSegment === "number"
-      ? []
-      : {};
+    return typeof nextSegment === "number" ? [] : {};
   }
 
   throw new TypeError(

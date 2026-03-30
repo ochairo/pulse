@@ -5,12 +5,14 @@ import {
   type PulseMutation,
 } from "../types.js";
 import {
+  canTraversePulseValue,
   type PulsePath,
   collectPulseMutations,
   isRelevantMutationPath,
   normalizeChildKey,
   readValueAtPath,
   setValueAtPath,
+  toPublicPulseMutation,
 } from "../infrastructure/value.js";
 
 type PulseListener<T> = (event: PulseChangeEvent<T>) => void;
@@ -109,6 +111,10 @@ function readNodeProperty<T>(
     return undefined;
   }
 
+  if (!canTraversePulseValue(readNodeValue(node))) {
+    return undefined;
+  }
+
   return getOrCreateProxy(
     getOrCreateChildNode(node as PulseNodeState<unknown, unknown>, property),
   );
@@ -195,7 +201,7 @@ function notifyNodeTree(
       notifyNodeListeners(node, {
         currentValue,
         previousValue,
-        changes: relevantMutations,
+        changes: relevantMutations.map(toPublicPulseMutation),
       });
     }
   }

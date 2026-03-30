@@ -23,7 +23,7 @@ const state = pulse({
 state.get();
 state.user.get();
 state.user.name.get();
-state.rows[0].id.get();
+state.rows[0]?.get()?.id;
 ```
 
 Nodes are obtained through normal JavaScript navigation:
@@ -76,18 +76,23 @@ state.user.name.set("Grace");
 
 - deep traversal is supported for plain objects and arrays
 - array length is exposed as `node.length`
+- plain object properties named `length` stay ordinary properties
 - writing through a missing branch creates plain object or array containers as needed
+- function-valued fields are leaf values and can only be read, replaced, or observed as a whole
+- non-plain objects are leaf values and do not expose child pulse nodes
 - writing through an existing non-plain object branch throws
 
 ## Type Rules
 
 - plain properties preserve their property types
 - tuple indexes preserve exact tuple member types
-- open-ended arrays stay compatible with `noUncheckedIndexedAccess`
+- open-ended arrays stay compatible with `noUncheckedIndexedAccess`, so indexed element pulses resolve to `T | undefined` until narrowed
+- common built-in non-plain objects such as `Date`, `Map`, and `Set` are typed as atomic leaves
+- arbitrary custom class instances are atomic at runtime, but TypeScript may still expose their instance fields structurally because it cannot reliably identify every user-defined class as non-plain
 
 ## Reserved Names
 
-The method names `get`, `set`, and `on` are reserved on pulse nodes. If your state has keys with those names, dot-property pulse access will collide with the runtime methods.
+The method names `get`, `set`, `on`, `then`, `catch`, and `finally` are reserved on pulse nodes. If your state has keys with those names, those child nodes are unavailable through property access because they collide with runtime semantics.
 
 ## Current Non-Goals
 

@@ -1,8 +1,11 @@
 # Changelog
 
-## 0.1.0
+## 0.2.0
 
-- introduce the initial deep `pulse()` runtime with explicit `get()`, `set()`, and `on()` semantics
-- support stable nested pulse nodes for plain objects, arrays, and array `length`
-- deliver ancestor-aware change events with absolute mutation paths
-- validate runtime behavior with runtime tests, strict source typechecking, and public type tests
+- stabilize the explicit `pulse()` contract around `get()`, `set()`, and `on()`
+- support stable nested pulse nodes for plain objects, arrays, and reactive array `length`
+- preserve ancestor-aware change events with absolute mutation paths and snapshot listener dispatch
+- treat functions and non-plain objects as atomic leaves with no child pulse traversal
+- align open-ended array indexing with `noUncheckedIndexedAccess` by typing indexed pulses as element-or-`undefined`
+- harden reserved-key behavior for `get`, `set`, `on`, `then`, `catch`, and `finally`
+- expand runtime regression coverage and public type tests for edge cases and contract boundaries

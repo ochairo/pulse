@@ -30,6 +30,34 @@ interface PulseCore<T> {
   on(callback: (event: PulseChangeEvent<T>) => void): () => void;
 }
 
+type ReservedPulseKey = "get" | "set" | "on" | "then" | "catch" | "finally";
+
+type AtomicPulseObject =
+  | Date
+  | RegExp
+  | Error
+  | Promise<unknown>
+  | Map<unknown, unknown>
+  | ReadonlyMap<unknown, unknown>
+  | Set<unknown>
+  | ReadonlySet<unknown>
+  | WeakMap<object, unknown>
+  | WeakSet<object>
+  | ArrayBuffer
+  | SharedArrayBuffer
+  | DataView
+  | Int8Array
+  | Uint8Array
+  | Uint8ClampedArray
+  | Int16Array
+  | Uint16Array
+  | Int32Array
+  | Uint32Array
+  | Float32Array
+  | Float64Array
+  | BigInt64Array
+  | BigUint64Array;
+
 type TupleIndexKeys<TTuple extends readonly unknown[]> = Exclude<
   keyof TTuple,
   keyof (readonly unknown[])
@@ -38,8 +66,11 @@ type TupleIndexKeys<TTuple extends readonly unknown[]> = Exclude<
 type IsTuple<TTuple extends readonly unknown[]> =
   number extends TTuple["length"] ? false : true;
 
+type PulseArrayElement<TArray extends readonly unknown[]> =
+  IsTuple<TArray> extends true ? TArray[number] : TArray[number] | undefined;
+
 type PulseArrayShape<TArray extends readonly unknown[]> = {
-  readonly [index: number]: Pulse<TArray[number]>;
+  readonly [index: number]: Pulse<PulseArrayElement<TArray>>;
   readonly length: Pulse<TArray["length"]>;
 } & (IsTuple<TArray> extends true
   ? {
@@ -48,13 +79,19 @@ type PulseArrayShape<TArray extends readonly unknown[]> = {
   : {});
 
 type PulseObjectShape<TValue extends object> = {
-  readonly [TKey in keyof TValue]-?: Pulse<TValue[TKey]>;
+  readonly [TKey in Exclude<keyof TValue, ReservedPulseKey>]-?: Pulse<
+    TValue[TKey]
+  >;
 };
 
 type PulseShape<T> = T extends readonly unknown[]
   ? PulseArrayShape<T>
-  : T extends object
-    ? PulseObjectShape<T>
-    : {};
+  : T extends (...args: infer _Args) => unknown
+    ? {}
+    : T extends AtomicPulseObject
+      ? {}
+      : T extends object
+        ? PulseObjectShape<T>
+        : {};
 
 export type Pulse<T> = PulseCore<T> & PulseShape<T>;

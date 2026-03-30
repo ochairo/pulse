@@ -42,6 +42,7 @@ state.user.name.set("Grace");
 ```
 
 Writing through an existing non-plain object branch throws.
+Non-plain object values themselves are atomic leaves, so child pulse nodes are not exposed for values such as `Date`, `Map`, or class instances.
 
 ## `node.on(listener)`
 
@@ -72,11 +73,14 @@ Object properties and array indexes expose child pulse nodes.
 ```ts
 const state = pulse({ rows: [{ title: "A" }] });
 
-state.rows[0].title.set("B");
+state.rows[0]?.set({ title: "B" });
+state.rows[0]?.get()?.title; // "B"
 state.rows.length.get(); // 1
 ```
 
-Tuple indexes remain precise in TypeScript. Open-ended arrays follow `noUncheckedIndexedAccess` safety rules.
+Tuple indexes remain precise in TypeScript. Open-ended arrays follow `noUncheckedIndexedAccess` safety rules, so indexed element pulses resolve to `T | undefined` until narrowed.
+
+For plain objects, a property named `length` stays a normal child node. The synthetic `length` pulse exists only on array nodes.
 
 ## `isPulse(value)`
 

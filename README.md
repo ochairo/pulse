@@ -29,19 +29,31 @@ This repository intentionally treats `pulse` as a new concept, not a minor `sign
 import { pulse } from "@ochairo/pulse";
 
 const state = pulse({
-  user: { name: "Ada", role: "admin" },
+  user: {
+    name: "Ada",
+    role: "admin",
+    action: (() => console.log("bar")),
+  },
   rows: [{ id: 1, title: "First" }],
 });
 
 state.user.name.on((event) => {
-  console.log(event.previousValue); // "Ada"
-  console.log(event.currentValue); // "Grace"
-  console.log(event.changes[0]?.path); // ["user", "name"]
+  event.previousValue; // "Ada"
+  event.currentValue; // "Grace"
+  event.changes[0]?.path; // ["user", "name"]
+});
+
+state.user.action.on((event) => {
+  event.previousValue; // () => console.log("bar")
+  event.currentValue; // () => console.log("baz")
 });
 
 state.user.name.set("Grace");
-console.log(state.user.name.get()); // "Grace"
-console.log(state.get().user.role); // "admin"
+state.user.action.set(() => console.log("baz"));
+state.user.name.get(); // "Grace"
+state.get().user.role; // "admin"
+state.user.action.get()(); // logs "baz"
+state.rows[0]?.get()?.title; // "First"
 ```
 
 ## Concept
@@ -52,7 +64,7 @@ console.log(state.get().user.role); // "admin"
 - writes are explicit through `set(nextValue)`
 - listeners receive change events instead of just the next value
 
-That contract applies to both the root node and any reachable child node such as `state.user.name` or `state.rows[0]`.
+That contract applies to both the root node and any non-reserved reachable child node such as `state.user.name` or `state.rows[0]`.
 
 ## Guarantees
 
@@ -64,9 +76,11 @@ That contract applies to both the root node and any reachable child node such as
 
 ## Current Boundaries
 
-- method names `get`, `set`, and `on` are reserved and cannot be accessed as child properties through dot notation
-- deep structural traversal is defined for plain objects and arrays; non-plain objects such as `Date`, `Map`, and class instances are treated as atomic values
-- with `noUncheckedIndexedAccess`, open-ended array indexes remain safety-biased in TypeScript; tuple indexes stay precise
+- method names `get`, `set`, `on`, `then`, `catch`, and `finally` are reserved and unavailable as child pulse nodes
+- deep structural traversal is defined only for plain objects and arrays; functions and non-plain objects such as `Date`, `Map`, and class instances are atomic values and do not expose child pulse nodes
+- plain object keys named `length` remain normal properties; only array nodes expose the synthetic reactive `length` child
+- with `noUncheckedIndexedAccess`, open-ended array indexes resolve to element-or-`undefined` pulses; tuple indexes stay precise
+- common built-in non-plain objects are modeled as atomic in the exported types; arbitrary custom class instances are atomic at runtime too, but TypeScript may still see their instance fields structurally
 
 ## Documentation
 

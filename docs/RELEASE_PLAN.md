@@ -25,6 +25,11 @@ Prepare `@ochairo/pulse` for a public `0.2.0` release without changing the curre
 - verify import behavior from a clean consumer fixture before publishing
 - keep CI running `pnpm validate` on pushes to `main` and pull requests
 
+Current status:
+
+- package version is aligned to `0.2.0`
+- changelog entry is aligned to the current runtime contract
+
 ### Package Metadata
 
 - repository, homepage, and bugs URLs are currently set to the GitHub `ochairo/pulse` location
