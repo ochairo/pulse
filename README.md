@@ -4,7 +4,7 @@
 
 # <img src="./assets/pulse-logo.svg" alt="pulse logo" width="32" height="16"> pulse
 
-Deep reactive state that feels like plain data.<br>
+Plain data, deeply reactive.<br>
 _Explicit APIs for plain objects and arrays. No magic._
 
 </div>
