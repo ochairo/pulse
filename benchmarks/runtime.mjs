@@ -1,17 +1,25 @@
 import { fileURLToPath } from "node:url";
 import { pulse } from "../dist/index.js";
 import {
+  appendMarketRows,
   createDeepState,
   createEditableTable,
   createMarketRows,
   createNestedUsers,
+  createOffsetMarketRows,
   createUsers,
+  createWideGraph,
   createWorkspaceState,
   getDeepLeaf,
   getNestedUsers,
   getTableCell,
+  prependUser,
+  readFirstUserNames,
+  removeFirstUser,
+  removeArrayItem,
   replaceManyUsers,
   runBenchmarkSuite,
+  swapArrayItems,
 } from "./shared.mjs";
 
 function attachPulseVisibleWindowListeners(table) {
@@ -34,6 +42,207 @@ function disposeCallbacks(callbacks) {
   for (const callback of callbacks) {
     callback();
   }
+}
+
+function readPulseUserNames(users, count) {
+  let value = "";
+
+  for (let index = 0; index < count; index += 1) {
+    value += users[index]?.name.get() ?? "";
+  }
+
+  return value;
+}
+
+function createPulseArrayWindowState() {
+  const state = pulse({ users: createUsers(256) });
+  let renderedWindow = readFirstUserNames(state.users.get(), 32);
+
+  return {
+    nextId: 256,
+    renderedWindow,
+    state,
+    unsubscribe: state.users.on(() => {
+      renderedWindow = readFirstUserNames(state.users.get(), 32);
+    }),
+  };
+}
+
+function insertPulseArrayHead(context) {
+  const nextUser = {
+    id: context.nextId,
+    name: `Inserted ${context.nextId}`,
+    age: 20 + (context.nextId % 20),
+  };
+
+  context.nextId += 1;
+  context.state.users.set(prependUser(context.state.users.get(), nextUser));
+}
+
+function removePulseArrayHead(context) {
+  context.state.users.set(removeFirstUser(context.state.users.get()));
+}
+
+function createPulseDerivedConsumerState() {
+  const users = pulse(createUsers(4));
+  let derivedValue = "";
+  const recompute = () => {
+    derivedValue = `${users[0]?.name.get() ?? ""}|${users[1]?.name.get() ?? ""}`;
+  };
+
+  recompute();
+
+  return {
+    derivedValue,
+    nextValue: 0,
+    recompute,
+    unsubscribers: [users[0]?.name.on(recompute), users[1]?.name.on(recompute)],
+    users,
+  };
+}
+
+function teardownPulseDerivedConsumerState(context) {
+  disposeCallbacks(context.unsubscribers.filter(Boolean));
+}
+
+function writePulseDerivedSource(context) {
+  context.nextValue += 1;
+  context.users[0]?.name.set(`User ${context.nextValue}`);
+}
+
+function writePulseUnrelatedSource(context) {
+  context.nextValue += 1;
+  context.users[3]?.name.set(`User ${context.nextValue}`);
+}
+
+function batchWritePulseDerivedSources(context) {
+  context.nextValue += 1;
+  context.users.batch(() => {
+    context.users[0]?.name.set(`User ${context.nextValue}`);
+    context.users[1]?.name.set(`Friend ${context.nextValue}`);
+  });
+}
+
+function batchWritePulseSameLeafTwice(context) {
+  context.nextValue += 1;
+  context.users.batch(() => {
+    context.users[0]?.name.set(`First ${context.nextValue}`);
+    context.users[0]?.name.set(`Second ${context.nextValue}`);
+  });
+}
+
+function createPulseListenerSelectivityState() {
+  const users = pulse(createUsers(128));
+  let sink = "";
+  const unsubscribers = [];
+
+  for (let index = 0; index < 100; index += 1) {
+    const unsubscribe = users[index]?.name.on(() => {
+      sink = users[index]?.name.get() ?? "";
+    });
+
+    if (unsubscribe) {
+      unsubscribers.push(unsubscribe);
+    }
+  }
+
+  return {
+    nextValue: 0,
+    sink,
+    unsubscribers,
+    users,
+  };
+}
+
+function teardownPulseListenerSelectivityState(context) {
+  disposeCallbacks(context.unsubscribers);
+}
+
+function writePulseSelectedLeaf(context) {
+  context.nextValue += 1;
+  context.users[0]?.name.set(`Selected ${context.nextValue}`);
+}
+
+function writePulseUnselectedLeaf(context) {
+  context.nextValue += 1;
+  context.users[127]?.name.set(`Unselected ${context.nextValue}`);
+}
+
+function createPulseLargeTableState(rowCount = 1_000) {
+  return {
+    rowCount,
+    nextIndex: 1,
+    nextTick: 0,
+    table: pulse({ rows: createMarketRows(rowCount) }),
+  };
+}
+
+function replacePulseAllRows(context) {
+  context.nextTick += 1;
+  context.table.rows.set(
+    createOffsetMarketRows(context.table.rows.get().length, context.nextTick),
+  );
+}
+
+function updatePulseEveryTenthRow(context) {
+  context.nextTick += 1;
+
+  context.table.batch(() => {
+    for (let index = 0; index < context.table.rows.get().length; index += 10) {
+      const row = context.table.rows[index];
+      const currentPrice = row?.price.get();
+
+      if (row && typeof currentPrice === "number") {
+        row.price.set(currentPrice + context.nextTick);
+      }
+    }
+  });
+}
+
+function selectPulseRow(context) {
+  const rowCount = context.table.rows.get().length;
+
+  if (rowCount === 0) {
+    return;
+  }
+
+  const previousIndex = (context.nextIndex - 1) % rowCount;
+  const nextIndex = context.nextIndex % rowCount;
+
+  context.nextIndex += 1;
+  context.table.batch(() => {
+    context.table.rows[previousIndex]?.focused.set(false);
+    context.table.rows[nextIndex]?.focused.set(true);
+  });
+}
+
+function swapPulseRows(context) {
+  context.table.rows.set(swapArrayItems(context.table.rows.get(), 1, 998));
+}
+
+function removePulseRow(context) {
+  const rows = context.table.rows.get();
+
+  if (rows.length <= 1) {
+    context.table.rows.set(createMarketRows(context.rowCount));
+  }
+
+  const nextRows = context.table.rows.get();
+  const index = context.nextIndex % nextRows.length;
+
+  context.nextIndex += 1;
+  context.table.rows.set(removeArrayItem(nextRows, index));
+}
+
+function appendPulseRows(context) {
+  context.nextTick += 1;
+  context.table.rows.set(
+    appendMarketRows(context.table.rows.get(), 1_000, context.nextTick),
+  );
+}
+
+function clearPulseRows(context) {
+  context.table.rows.set([]);
 }
 
 export function runPulseBenchmarkSuite(options = {}) {
@@ -99,6 +308,31 @@ export function runPulseBenchmarkSuite(options = {}) {
         ],
       },
       {
+        title: "Activation Costs",
+        cases: [
+          {
+            name: "wide graph deep leaf get on fresh state",
+            iterations: 500,
+            task: () => {
+              const state = pulse(createWideGraph(5_000));
+              state.key4999?.child.grandchild.value.get();
+            },
+          },
+          {
+            name: "wide graph deep leaf subscribe on fresh state",
+            iterations: 500,
+            task: () => {
+              const state = pulse(createWideGraph(5_000));
+              const unsubscribe = state.key4999?.child.grandchild.value.on(
+                () => {},
+              );
+
+              unsubscribe?.();
+            },
+          },
+        ],
+      },
+      {
         title: "Focused Writes",
         cases: [
           {
@@ -141,6 +375,154 @@ export function runPulseBenchmarkSuite(options = {}) {
               const users = pulse(createUsers(2));
               users[0]?.set({ id: 0, name: "Grace", age: 31 });
             },
+          },
+        ],
+      },
+      {
+        title: "Array Reindexing Costs",
+        cases: [
+          {
+            name: "head insert with visible window consumer",
+            iterations: 1_000,
+            setup: createPulseArrayWindowState,
+            task: insertPulseArrayHead,
+            teardown: (context) => {
+              context.unsubscribe();
+            },
+          },
+          {
+            name: "head remove with visible window consumer",
+            iterations: 1_000,
+            setup: createPulseArrayWindowState,
+            task: removePulseArrayHead,
+            teardown: (context) => {
+              context.unsubscribe();
+            },
+          },
+        ],
+      },
+      {
+        title: "Large Table Structural Costs",
+        cases: [
+          {
+            name: "create 1,000 rows",
+            iterations: 500,
+            task: () => {
+              pulse({ rows: createMarketRows(1_000) });
+            },
+          },
+          {
+            name: "create 10,000 rows",
+            iterations: 100,
+            task: () => {
+              pulse({ rows: createMarketRows(10_000) });
+            },
+          },
+          {
+            name: "replace all 1,000 rows",
+            iterations: 500,
+            setup: () => createPulseLargeTableState(1_000),
+            task: replacePulseAllRows,
+          },
+          {
+            name: "partial update every 10th row in 1,000 rows",
+            iterations: 500,
+            setup: () => createPulseLargeTableState(1_000),
+            task: updatePulseEveryTenthRow,
+          },
+          {
+            name: "select focused row in 1,000 rows",
+            iterations: 1_000,
+            setup: () => createPulseLargeTableState(1_000),
+            task: selectPulseRow,
+          },
+          {
+            name: "swap two rows in 1,000 rows",
+            iterations: 500,
+            setup: () => createPulseLargeTableState(1_000),
+            task: swapPulseRows,
+          },
+          {
+            name: "remove one row from 1,000 rows",
+            iterations: 500,
+            setup: () => createPulseLargeTableState(1_000),
+            task: removePulseRow,
+          },
+          {
+            name: "append 1,000 rows to 10,000 rows",
+            iterations: 100,
+            setup: () => createPulseLargeTableState(10_000),
+            task: appendPulseRows,
+          },
+          {
+            name: "clear 1,000 rows",
+            iterations: 1_000,
+            setup: () => createPulseLargeTableState(1_000),
+            task: clearPulseRows,
+          },
+        ],
+      },
+      {
+        title: "Derived Consumer Costs",
+        cases: [
+          {
+            name: "relevant source write with two-source consumer",
+            iterations: 5_000,
+            setup: createPulseDerivedConsumerState,
+            task: writePulseDerivedSource,
+            teardown: teardownPulseDerivedConsumerState,
+          },
+          {
+            name: "unrelated source write with two-source consumer",
+            iterations: 5_000,
+            setup: createPulseDerivedConsumerState,
+            task: writePulseUnrelatedSource,
+            teardown: teardownPulseDerivedConsumerState,
+          },
+          {
+            name: "batched dual-source write with two-source consumer",
+            iterations: 3_000,
+            setup: createPulseDerivedConsumerState,
+            task: batchWritePulseDerivedSources,
+            teardown: teardownPulseDerivedConsumerState,
+          },
+        ],
+      },
+      {
+        title: "Batch Collapse Costs",
+        cases: [
+          {
+            name: "same leaf written twice in root batch",
+            iterations: 5_000,
+            setup: createPulseDerivedConsumerState,
+            task: batchWritePulseSameLeafTwice,
+            teardown: teardownPulseDerivedConsumerState,
+          },
+          {
+            name: "sibling leaf writes in root batch",
+            iterations: 3_000,
+            setup: createPulseDerivedConsumerState,
+            task: batchWritePulseDerivedSources,
+            teardown: teardownPulseDerivedConsumerState,
+          },
+        ],
+      },
+      {
+        title: "Listener Selectivity Costs",
+        cases: [
+          {
+            name: "write one subscribed leaf among 100 listeners",
+            iterations: 2_000,
+            setup: createPulseListenerSelectivityState,
+            task: writePulseSelectedLeaf,
+            teardown: teardownPulseListenerSelectivityState,
+          },
+          {
+            name: "write unsubscribed leaf with 100 unrelated listeners",
+            iterations: 2_000,
+            setup: createPulseListenerSelectivityState,
+            task: writePulseUnselectedLeaf,
+            teardown: teardownPulseListenerSelectivityState,
           },
         ],
       },

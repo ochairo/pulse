@@ -57,6 +57,51 @@ export function createUsers(length) {
   }));
 }
 
+export function createWideGraph(width) {
+  const root = {};
+
+  for (let index = 0; index < width; index += 1) {
+    root[`key${index}`] = {
+      child: {
+        grandchild: {
+          value: index,
+          flag: index % 2 === 0,
+        },
+      },
+    };
+  }
+
+  return root;
+}
+
+export function getWideGraphLeaf(root, index) {
+  return root[`key${index}`]?.child?.grandchild?.value;
+}
+
+export function prependUser(users, user) {
+  return [user, ...users];
+}
+
+export function removeFirstUser(users) {
+  return users.slice(1);
+}
+
+export function readFirstUserNames(users, count) {
+  let value = "";
+
+  for (let index = 0; index < count; index += 1) {
+    const user = users[index];
+
+    if (!user) {
+      break;
+    }
+
+    value += user.name;
+  }
+
+  return value;
+}
+
 export function createMarketRows(length) {
   return Array.from({ length }, (_, index) => ({
     id: index,
@@ -69,6 +114,50 @@ export function createMarketRows(length) {
     heat: 10 + (index % 90),
     focused: index === 0,
   }));
+}
+
+export function createOffsetMarketRows(length, offset = 0) {
+  return Array.from({ length }, (_, index) => ({
+    id: index,
+    symbol: `SYM-${(index + offset) % 12}`,
+    venue: `V-${(index + offset) % 6}`,
+    price: 100 + offset + index * 0.1,
+    volume: 100_000 + offset * 100 + index * 13,
+    change: ((index + offset) % 9) - 4,
+    trades: 25 + ((index + offset) % 50),
+    heat: 10 + ((index + offset) % 90),
+    focused: index === 0,
+  }));
+}
+
+export function swapArrayItems(items, leftIndex, rightIndex) {
+  const nextItems = items.slice();
+  const leftValue = nextItems[leftIndex];
+
+  nextItems[leftIndex] = nextItems[rightIndex];
+  nextItems[rightIndex] = leftValue;
+
+  return nextItems;
+}
+
+export function removeArrayItem(items, index) {
+  return [...items.slice(0, index), ...items.slice(index + 1)];
+}
+
+export function appendMarketRows(items, count, offset = 0) {
+  const appended = Array.from({ length: count }, (_, index) => ({
+    id: items.length + index,
+    symbol: `SYM-${(items.length + index + offset) % 12}`,
+    venue: `V-${(items.length + index + offset) % 6}`,
+    price: 100 + offset + (items.length + index) * 0.1,
+    volume: 100_000 + offset * 100 + (items.length + index) * 13,
+    change: ((items.length + index + offset) % 9) - 4,
+    trades: 25 + ((items.length + index + offset) % 50),
+    heat: 10 + ((items.length + index + offset) % 90),
+    focused: false,
+  }));
+
+  return [...items, ...appended];
 }
 
 export function createWorkspaceState(projects = 24, tasksPerProject = 32) {

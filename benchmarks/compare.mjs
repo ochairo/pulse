@@ -13,13 +13,22 @@ import {
 import { proxy, subscribe } from "valtio/vanilla";
 import { pulse } from "../dist/index.js";
 import {
+  appendMarketRows,
   createDeepState,
   createEditableTable,
+  createMarketRows,
+  createOffsetMarketRows,
   createUsers,
+  createWideGraph,
   createWorkspaceState,
   getTableCell,
+  prependUser,
+  readFirstUserNames,
+  removeFirstUser,
+  removeArrayItem,
   replaceManyUsers,
   runBenchmarkSuite,
+  swapArrayItems,
 } from "./shared.mjs";
 
 function createMobxBox(value) {
@@ -237,6 +246,760 @@ function disposeCallbacks(callbacks) {
   for (const callback of callbacks) {
     callback();
   }
+}
+
+function createPulseArrayReindexState() {
+  const store = pulse({ users: createUsers(256) });
+  let renderedWindow = readFirstUserNames(store.users.get(), 32);
+
+  return {
+    nextId: 256,
+    renderedWindow,
+    store,
+    unsubscribe: store.users.on(() => {
+      renderedWindow = readFirstUserNames(store.users.get(), 32);
+    }),
+  };
+}
+
+function createLegendArrayReindexState() {
+  const store = legendObservable({ users: createUsers(256) });
+  let renderedWindow = readFirstUserNames(store.users.get(), 32);
+
+  return {
+    dispose: store.users.onChange(() => {
+      renderedWindow = readFirstUserNames(store.users.get(), 32);
+    }),
+    nextId: 256,
+    renderedWindow,
+    store,
+  };
+}
+
+function createMobxArrayReindexState() {
+  const store = mobxObservable({ users: createUsers(256) });
+  let renderedWindow = readFirstUserNames(store.users, 32);
+
+  return {
+    dispose: autorun(() => {
+      renderedWindow = readFirstUserNames(store.users, 32);
+    }),
+    nextId: 256,
+    renderedWindow,
+    store,
+  };
+}
+
+function createValtioArrayReindexState() {
+  const store = proxy({ users: createUsers(256) });
+  let renderedWindow = readFirstUserNames(store.users, 32);
+
+  return {
+    nextId: 256,
+    renderedWindow,
+    store,
+    unsubscribe: subscribeValtioSync(store, () => {
+      renderedWindow = readFirstUserNames(store.users, 32);
+    }),
+  };
+}
+
+function insertPulseArrayHead(context) {
+  const nextUser = {
+    id: context.nextId,
+    name: `Inserted ${context.nextId}`,
+    age: 20 + (context.nextId % 20),
+  };
+
+  context.nextId += 1;
+  context.store.users.set(prependUser(context.store.users.get(), nextUser));
+}
+
+function insertLegendArrayHead(context) {
+  const nextUser = {
+    id: context.nextId,
+    name: `Inserted ${context.nextId}`,
+    age: 20 + (context.nextId % 20),
+  };
+
+  context.nextId += 1;
+  context.store.users.set(prependUser(context.store.users.get(), nextUser));
+}
+
+function insertMobxArrayHead(context) {
+  const nextUser = {
+    id: context.nextId,
+    name: `Inserted ${context.nextId}`,
+    age: 20 + (context.nextId % 20),
+  };
+
+  context.nextId += 1;
+
+  runInAction(() => {
+    context.store.users = prependUser(context.store.users, nextUser);
+  });
+}
+
+function insertValtioArrayHead(context) {
+  const nextUser = {
+    id: context.nextId,
+    name: `Inserted ${context.nextId}`,
+    age: 20 + (context.nextId % 20),
+  };
+
+  context.nextId += 1;
+  context.store.users = prependUser(context.store.users, nextUser);
+}
+
+function removePulseArrayHead(context) {
+  context.store.users.set(removeFirstUser(context.store.users.get()));
+}
+
+function removeLegendArrayHead(context) {
+  context.store.users.set(removeFirstUser(context.store.users.get()));
+}
+
+function removeMobxArrayHead(context) {
+  runInAction(() => {
+    context.store.users = removeFirstUser(context.store.users);
+  });
+}
+
+function removeValtioArrayHead(context) {
+  context.store.users = removeFirstUser(context.store.users);
+}
+
+function createPulseDerivedConsumerState() {
+  const users = pulse(createUsers(4));
+  let derivedValue = "";
+  const recompute = () => {
+    derivedValue = `${users[0]?.name.get() ?? ""}|${users[1]?.name.get() ?? ""}`;
+  };
+
+  recompute();
+
+  return {
+    derivedValue,
+    nextValue: 0,
+    unsubscribers: [users[0]?.name.on(recompute), users[1]?.name.on(recompute)],
+    users,
+  };
+}
+
+function createLegendDerivedConsumerState() {
+  const users = legendObservable(createUsers(4));
+  let derivedValue = "";
+  const recompute = () => {
+    derivedValue = `${users[0].name.get()}|${users[1].name.get()}`;
+  };
+
+  recompute();
+
+  return {
+    derivedValue,
+    disposers: [
+      users[0].name.onChange(recompute),
+      users[1].name.onChange(recompute),
+    ],
+    nextValue: 0,
+    users,
+  };
+}
+
+function createMobxDerivedConsumerState() {
+  const users = mobxObservable(createUsers(4));
+  let derivedValue = "";
+
+  return {
+    derivedValue,
+    dispose: autorun(() => {
+      derivedValue = `${users[0].name}|${users[1].name}`;
+    }),
+    nextValue: 0,
+    users,
+  };
+}
+
+function createValtioDerivedConsumerState() {
+  const users = proxy(createUsers(4));
+  let derivedValue = `${users[0].name}|${users[1].name}`;
+  const recompute = () => {
+    derivedValue = `${users[0].name}|${users[1].name}`;
+  };
+
+  return {
+    derivedValue,
+    nextValue: 0,
+    unsubscribers: [
+      subscribeValtioSync(users[0], recompute),
+      subscribeValtioSync(users[1], recompute),
+    ],
+    users,
+  };
+}
+
+function teardownPulseDerivedConsumerState(context) {
+  disposeCallbacks(context.unsubscribers.filter(Boolean));
+}
+
+function teardownLegendDerivedConsumerState(context) {
+  disposeCallbacks(context.disposers);
+}
+
+function teardownMobxDerivedConsumerState(context) {
+  context.dispose();
+}
+
+function teardownValtioDerivedConsumerState(context) {
+  disposeCallbacks(context.unsubscribers);
+}
+
+function writePulseDerivedSource(context) {
+  context.nextValue += 1;
+  context.users[0]?.name.set(`User ${context.nextValue}`);
+}
+
+function writeLegendDerivedSource(context) {
+  context.nextValue += 1;
+  context.users[0].name.set(`User ${context.nextValue}`);
+}
+
+function writeMobxDerivedSource(context) {
+  context.nextValue += 1;
+  runInAction(() => {
+    context.users[0].name = `User ${context.nextValue}`;
+  });
+}
+
+function writeValtioDerivedSource(context) {
+  context.nextValue += 1;
+  context.users[0].name = `User ${context.nextValue}`;
+}
+
+function writePulseUnrelatedDerivedSource(context) {
+  context.nextValue += 1;
+  context.users[3]?.name.set(`User ${context.nextValue}`);
+}
+
+function writeLegendUnrelatedDerivedSource(context) {
+  context.nextValue += 1;
+  context.users[3].name.set(`User ${context.nextValue}`);
+}
+
+function writeMobxUnrelatedDerivedSource(context) {
+  context.nextValue += 1;
+  runInAction(() => {
+    context.users[3].name = `User ${context.nextValue}`;
+  });
+}
+
+function writeValtioUnrelatedDerivedSource(context) {
+  context.nextValue += 1;
+  context.users[3].name = `User ${context.nextValue}`;
+}
+
+function batchWritePulseDerivedSources(context) {
+  context.nextValue += 1;
+  context.users.batch(() => {
+    context.users[0]?.name.set(`User ${context.nextValue}`);
+    context.users[1]?.name.set(`Friend ${context.nextValue}`);
+  });
+}
+
+function batchWriteLegendDerivedSources(context) {
+  context.nextValue += 1;
+  legendBatch(() => {
+    context.users[0].name.set(`User ${context.nextValue}`);
+    context.users[1].name.set(`Friend ${context.nextValue}`);
+  });
+}
+
+function batchWriteMobxDerivedSources(context) {
+  context.nextValue += 1;
+  runInAction(() => {
+    context.users[0].name = `User ${context.nextValue}`;
+    context.users[1].name = `Friend ${context.nextValue}`;
+  });
+}
+
+function batchWriteValtioDerivedSources(context) {
+  context.nextValue += 1;
+  context.users[0].name = `User ${context.nextValue}`;
+  context.users[1].name = `Friend ${context.nextValue}`;
+}
+
+function batchWritePulseSameLeafTwice(context) {
+  context.nextValue += 1;
+  context.users.batch(() => {
+    context.users[0]?.name.set(`First ${context.nextValue}`);
+    context.users[0]?.name.set(`Second ${context.nextValue}`);
+  });
+}
+
+function batchWriteLegendSameLeafTwice(context) {
+  context.nextValue += 1;
+  legendBatch(() => {
+    context.users[0].name.set(`First ${context.nextValue}`);
+    context.users[0].name.set(`Second ${context.nextValue}`);
+  });
+}
+
+function batchWriteMobxSameLeafTwice(context) {
+  context.nextValue += 1;
+  runInAction(() => {
+    context.users[0].name = `First ${context.nextValue}`;
+    context.users[0].name = `Second ${context.nextValue}`;
+  });
+}
+
+function batchWriteValtioSameLeafTwice(context) {
+  context.nextValue += 1;
+  context.users[0].name = `First ${context.nextValue}`;
+  context.users[0].name = `Second ${context.nextValue}`;
+}
+
+function createPulseListenerSelectivityState() {
+  const users = pulse(createUsers(128));
+  let sink = "";
+  const unsubscribers = [];
+
+  for (let index = 0; index < 100; index += 1) {
+    const unsubscribe = users[index]?.name.on(() => {
+      sink = users[index]?.name.get() ?? "";
+    });
+
+    if (unsubscribe) {
+      unsubscribers.push(unsubscribe);
+    }
+  }
+
+  return {
+    nextValue: 0,
+    sink,
+    unsubscribers,
+    users,
+  };
+}
+
+function createLegendListenerSelectivityState() {
+  const users = legendObservable(createUsers(128));
+  let sink = "";
+  const disposers = [];
+
+  for (let index = 0; index < 100; index += 1) {
+    disposers.push(
+      users[index].name.onChange(() => {
+        sink = users[index].name.get();
+      }),
+    );
+  }
+
+  return {
+    disposers,
+    nextValue: 0,
+    sink,
+    users,
+  };
+}
+
+function createMobxListenerSelectivityState() {
+  const users = mobxObservable(createUsers(128));
+  let sink = "";
+  const disposers = [];
+
+  for (let index = 0; index < 100; index += 1) {
+    disposers.push(
+      autorun(() => {
+        sink = users[index].name;
+      }),
+    );
+  }
+
+  return {
+    disposers,
+    nextValue: 0,
+    sink,
+    users,
+  };
+}
+
+function createValtioListenerSelectivityState() {
+  const users = proxy(createUsers(128));
+  let sink = "";
+  const unsubscribers = [];
+
+  for (let index = 0; index < 100; index += 1) {
+    unsubscribers.push(
+      subscribeValtioSync(users[index], () => {
+        sink = users[index].name;
+      }),
+    );
+  }
+
+  return {
+    nextValue: 0,
+    sink,
+    unsubscribers,
+    users,
+  };
+}
+
+function teardownPulseListenerSelectivityState(context) {
+  disposeCallbacks(context.unsubscribers);
+}
+
+function teardownLegendListenerSelectivityState(context) {
+  disposeCallbacks(context.disposers);
+}
+
+function teardownMobxListenerSelectivityState(context) {
+  disposeCallbacks(context.disposers);
+}
+
+function teardownValtioListenerSelectivityState(context) {
+  disposeCallbacks(context.unsubscribers);
+}
+
+function writePulseSelectedLeaf(context) {
+  context.nextValue += 1;
+  context.users[0]?.name.set(`Selected ${context.nextValue}`);
+}
+
+function writeLegendSelectedLeaf(context) {
+  context.nextValue += 1;
+  context.users[0].name.set(`Selected ${context.nextValue}`);
+}
+
+function writeMobxSelectedLeaf(context) {
+  context.nextValue += 1;
+  runInAction(() => {
+    context.users[0].name = `Selected ${context.nextValue}`;
+  });
+}
+
+function writeValtioSelectedLeaf(context) {
+  context.nextValue += 1;
+  context.users[0].name = `Selected ${context.nextValue}`;
+}
+
+function writePulseUnselectedLeaf(context) {
+  context.nextValue += 1;
+  context.users[127]?.name.set(`Unselected ${context.nextValue}`);
+}
+
+function writeLegendUnselectedLeaf(context) {
+  context.nextValue += 1;
+  context.users[127].name.set(`Unselected ${context.nextValue}`);
+}
+
+function writeMobxUnselectedLeaf(context) {
+  context.nextValue += 1;
+  runInAction(() => {
+    context.users[127].name = `Unselected ${context.nextValue}`;
+  });
+}
+
+function writeValtioUnselectedLeaf(context) {
+  context.nextValue += 1;
+  context.users[127].name = `Unselected ${context.nextValue}`;
+}
+
+function createPulseLargeTableState(rowCount = 1_000) {
+  return {
+    rowCount,
+    nextIndex: 1,
+    nextTick: 0,
+    table: pulse({ rows: createMarketRows(rowCount) }),
+  };
+}
+
+function createLegendLargeTableState(rowCount = 1_000) {
+  return {
+    rowCount,
+    nextIndex: 1,
+    nextTick: 0,
+    table: legendObservable({ rows: createMarketRows(rowCount) }),
+  };
+}
+
+function createMobxLargeTableState(rowCount = 1_000) {
+  return {
+    rowCount,
+    nextIndex: 1,
+    nextTick: 0,
+    table: mobxObservable({ rows: createMarketRows(rowCount) }),
+  };
+}
+
+function createValtioLargeTableState(rowCount = 1_000) {
+  return {
+    rowCount,
+    nextIndex: 1,
+    nextTick: 0,
+    table: proxy({ rows: createMarketRows(rowCount) }),
+  };
+}
+
+function replacePulseLargeTableRows(context) {
+  context.nextTick += 1;
+  context.table.rows.set(
+    createOffsetMarketRows(context.table.rows.get().length, context.nextTick),
+  );
+}
+
+function replaceLegendLargeTableRows(context) {
+  context.nextTick += 1;
+  context.table.rows.set(
+    createOffsetMarketRows(context.table.rows.get().length, context.nextTick),
+  );
+}
+
+function replaceMobxLargeTableRows(context) {
+  context.nextTick += 1;
+  runInAction(() => {
+    context.table.rows = createOffsetMarketRows(
+      context.table.rows.length,
+      context.nextTick,
+    );
+  });
+}
+
+function replaceValtioLargeTableRows(context) {
+  context.nextTick += 1;
+  context.table.rows = createOffsetMarketRows(
+    context.table.rows.length,
+    context.nextTick,
+  );
+}
+
+function updatePulseEveryTenthLargeTableRow(context) {
+  context.nextTick += 1;
+  context.table.batch(() => {
+    for (let index = 0; index < context.table.rows.get().length; index += 10) {
+      const row = context.table.rows[index];
+      const price = row?.price.get();
+
+      if (row && typeof price === "number") {
+        row.price.set(price + context.nextTick);
+      }
+    }
+  });
+}
+
+function updateLegendEveryTenthLargeTableRow(context) {
+  context.nextTick += 1;
+  legendBatch(() => {
+    for (let index = 0; index < context.table.rows.get().length; index += 10) {
+      const row = context.table.rows[index];
+      row.price.set(row.price.get() + context.nextTick);
+    }
+  });
+}
+
+function updateMobxEveryTenthLargeTableRow(context) {
+  context.nextTick += 1;
+  runInAction(() => {
+    for (let index = 0; index < context.table.rows.length; index += 10) {
+      context.table.rows[index].price += context.nextTick;
+    }
+  });
+}
+
+function updateValtioEveryTenthLargeTableRow(context) {
+  context.nextTick += 1;
+  for (let index = 0; index < context.table.rows.length; index += 10) {
+    context.table.rows[index].price += context.nextTick;
+  }
+}
+
+function selectPulseLargeTableRow(context) {
+  const rowCount = context.table.rows.get().length;
+
+  if (rowCount === 0) {
+    return;
+  }
+
+  const previousIndex = (context.nextIndex - 1) % rowCount;
+  const nextIndex = context.nextIndex % rowCount;
+
+  context.nextIndex += 1;
+  context.table.batch(() => {
+    context.table.rows[previousIndex]?.focused.set(false);
+    context.table.rows[nextIndex]?.focused.set(true);
+  });
+}
+
+function selectLegendLargeTableRow(context) {
+  const rowCount = context.table.rows.get().length;
+
+  if (rowCount === 0) {
+    return;
+  }
+
+  const previousIndex = (context.nextIndex - 1) % rowCount;
+  const nextIndex = context.nextIndex % rowCount;
+
+  context.nextIndex += 1;
+  legendBatch(() => {
+    context.table.rows[previousIndex].focused.set(false);
+    context.table.rows[nextIndex].focused.set(true);
+  });
+}
+
+function selectMobxLargeTableRow(context) {
+  const rowCount = context.table.rows.length;
+
+  if (rowCount === 0) {
+    return;
+  }
+
+  const previousIndex = (context.nextIndex - 1) % rowCount;
+  const nextIndex = context.nextIndex % rowCount;
+
+  context.nextIndex += 1;
+  runInAction(() => {
+    context.table.rows[previousIndex].focused = false;
+    context.table.rows[nextIndex].focused = true;
+  });
+}
+
+function selectValtioLargeTableRow(context) {
+  const rowCount = context.table.rows.length;
+
+  if (rowCount === 0) {
+    return;
+  }
+
+  const previousIndex = (context.nextIndex - 1) % rowCount;
+  const nextIndex = context.nextIndex % rowCount;
+
+  context.nextIndex += 1;
+  context.table.rows[previousIndex].focused = false;
+  context.table.rows[nextIndex].focused = true;
+}
+
+function swapPulseLargeTableRows(context) {
+  context.table.rows.set(swapArrayItems(context.table.rows.get(), 1, 998));
+}
+
+function swapLegendLargeTableRows(context) {
+  context.table.rows.set(swapArrayItems(context.table.rows.get(), 1, 998));
+}
+
+function swapMobxLargeTableRows(context) {
+  runInAction(() => {
+    context.table.rows = swapArrayItems(context.table.rows, 1, 998);
+  });
+}
+
+function swapValtioLargeTableRows(context) {
+  context.table.rows = swapArrayItems(context.table.rows, 1, 998);
+}
+
+function removePulseLargeTableRow(context) {
+  const rows = context.table.rows.get();
+
+  if (rows.length <= 1) {
+    context.table.rows.set(createMarketRows(context.rowCount));
+  }
+
+  const nextRows = context.table.rows.get();
+  const index = context.nextIndex % nextRows.length;
+
+  context.nextIndex += 1;
+  context.table.rows.set(removeArrayItem(nextRows, index));
+}
+
+function removeLegendLargeTableRow(context) {
+  const rows = context.table.rows.get();
+
+  if (rows.length <= 1) {
+    context.table.rows.set(createMarketRows(context.rowCount));
+  }
+
+  const nextRows = context.table.rows.get();
+  const index = context.nextIndex % nextRows.length;
+
+  context.nextIndex += 1;
+  context.table.rows.set(removeArrayItem(nextRows, index));
+}
+
+function removeMobxLargeTableRow(context) {
+  if (context.table.rows.length <= 1) {
+    runInAction(() => {
+      context.table.rows = createMarketRows(context.rowCount);
+    });
+  }
+
+  const index = context.nextIndex % context.table.rows.length;
+
+  context.nextIndex += 1;
+  runInAction(() => {
+    context.table.rows = removeArrayItem(context.table.rows, index);
+  });
+}
+
+function removeValtioLargeTableRow(context) {
+  if (context.table.rows.length <= 1) {
+    context.table.rows = createMarketRows(context.rowCount);
+  }
+
+  const index = context.nextIndex % context.table.rows.length;
+
+  context.nextIndex += 1;
+  context.table.rows = removeArrayItem(context.table.rows, index);
+}
+
+function appendPulseLargeTableRows(context) {
+  context.nextTick += 1;
+  context.table.rows.set(
+    appendMarketRows(context.table.rows.get(), 1_000, context.nextTick),
+  );
+}
+
+function appendLegendLargeTableRows(context) {
+  context.nextTick += 1;
+  context.table.rows.set(
+    appendMarketRows(context.table.rows.get(), 1_000, context.nextTick),
+  );
+}
+
+function appendMobxLargeTableRows(context) {
+  context.nextTick += 1;
+  runInAction(() => {
+    context.table.rows = appendMarketRows(
+      context.table.rows,
+      1_000,
+      context.nextTick,
+    );
+  });
+}
+
+function appendValtioLargeTableRows(context) {
+  context.nextTick += 1;
+  context.table.rows = appendMarketRows(
+    context.table.rows,
+    1_000,
+    context.nextTick,
+  );
+}
+
+function clearPulseLargeTableRows(context) {
+  context.table.rows.set([]);
+}
+
+function clearLegendLargeTableRows(context) {
+  context.table.rows.set([]);
+}
+
+function clearMobxLargeTableRows(context) {
+  runInAction(() => {
+    context.table.rows = [];
+  });
+}
+
+function clearValtioLargeTableRows(context) {
+  context.table.rows = [];
 }
 
 function createPulseWorkspaceState() {
@@ -1232,6 +1995,92 @@ export function runComparisonBenchmarkSuite(options = {}) {
         ],
       },
       {
+        title: "Activation Costs",
+        cases: [
+          {
+            name: "pulse wide graph deep leaf get on fresh state",
+            iterations: 500,
+            task: () => {
+              const state = pulse(createWideGraph(5_000));
+              state.key4999?.child.grandchild.value.get();
+            },
+          },
+          {
+            name: "Legend-State wide graph deep leaf get on fresh state",
+            iterations: 500,
+            task: () => {
+              const state = legendObservable(createWideGraph(5_000));
+              state.key4999.child.grandchild.value.get();
+            },
+          },
+          {
+            name: "MobX wide graph deep leaf get on fresh state",
+            iterations: 500,
+            task: () => {
+              const state = mobxObservable(createWideGraph(5_000));
+              state.key4999.child.grandchild.value;
+            },
+          },
+          {
+            name: "valtio wide graph deep leaf get on fresh state",
+            iterations: 500,
+            task: () => {
+              const state = proxy(createWideGraph(5_000));
+              state.key4999.child.grandchild.value;
+            },
+          },
+          {
+            name: "pulse wide graph deep leaf subscribe on fresh state",
+            iterations: 500,
+            task: () => {
+              const state = pulse(createWideGraph(5_000));
+              const unsubscribe = state.key4999?.child.grandchild.value.on(
+                () => {},
+              );
+
+              unsubscribe?.();
+            },
+          },
+          {
+            name: "Legend-State wide graph deep leaf subscribe on fresh state",
+            iterations: 500,
+            task: () => {
+              const state = legendObservable(createWideGraph(5_000));
+              const dispose = state.key4999.child.grandchild.value.onChange(
+                () => {},
+              );
+
+              dispose();
+            },
+          },
+          {
+            name: "MobX wide graph deep leaf subscribe on fresh state",
+            iterations: 500,
+            task: () => {
+              const state = mobxObservable(createWideGraph(5_000));
+              const dispose = autorun(() => {
+                state.key4999.child.grandchild.value;
+              });
+
+              dispose();
+            },
+          },
+          {
+            name: "valtio wide graph deep leaf subscribe on fresh state",
+            iterations: 500,
+            task: () => {
+              const state = proxy(createWideGraph(5_000));
+              const unsubscribe = subscribeValtioSync(
+                state.key4999.child.grandchild,
+                () => {},
+              );
+
+              unsubscribe();
+            },
+          },
+        ],
+      },
+      {
         title: "Primitive Root Write",
         cases: [
           {
@@ -1422,6 +2271,495 @@ export function runComparisonBenchmarkSuite(options = {}) {
                 [5, 25, 50, 75, 100, 125],
               );
             },
+          },
+        ],
+      },
+      {
+        title: "Array Reindexing Costs",
+        cases: [
+          {
+            name: "pulse head insert with visible window consumer",
+            iterations: 1_000,
+            setup: createPulseArrayReindexState,
+            task: insertPulseArrayHead,
+            teardown: (context) => {
+              context.unsubscribe();
+            },
+          },
+          {
+            name: "Legend-State head insert with visible window consumer",
+            iterations: 1_000,
+            setup: createLegendArrayReindexState,
+            task: insertLegendArrayHead,
+            teardown: (context) => {
+              context.dispose();
+            },
+          },
+          {
+            name: "MobX head insert with visible window consumer",
+            iterations: 1_000,
+            setup: createMobxArrayReindexState,
+            task: insertMobxArrayHead,
+            teardown: (context) => {
+              context.dispose();
+            },
+          },
+          {
+            name: "valtio head insert with visible window consumer",
+            iterations: 1_000,
+            setup: createValtioArrayReindexState,
+            task: insertValtioArrayHead,
+            teardown: (context) => {
+              context.unsubscribe();
+            },
+          },
+          {
+            name: "pulse head remove with visible window consumer",
+            iterations: 1_000,
+            setup: createPulseArrayReindexState,
+            task: removePulseArrayHead,
+            teardown: (context) => {
+              context.unsubscribe();
+            },
+          },
+          {
+            name: "Legend-State head remove with visible window consumer",
+            iterations: 1_000,
+            setup: createLegendArrayReindexState,
+            task: removeLegendArrayHead,
+            teardown: (context) => {
+              context.dispose();
+            },
+          },
+          {
+            name: "MobX head remove with visible window consumer",
+            iterations: 1_000,
+            setup: createMobxArrayReindexState,
+            task: removeMobxArrayHead,
+            teardown: (context) => {
+              context.dispose();
+            },
+          },
+          {
+            name: "valtio head remove with visible window consumer",
+            iterations: 1_000,
+            setup: createValtioArrayReindexState,
+            task: removeValtioArrayHead,
+            teardown: (context) => {
+              context.unsubscribe();
+            },
+          },
+        ],
+      },
+      {
+        title: "Large Table Structural Costs",
+        cases: [
+          {
+            name: "pulse create 1,000 rows",
+            iterations: 500,
+            task: () => {
+              pulse({ rows: createMarketRows(1_000) });
+            },
+          },
+          {
+            name: "Legend-State create 1,000 rows",
+            iterations: 500,
+            task: () => {
+              legendObservable({ rows: createMarketRows(1_000) });
+            },
+          },
+          {
+            name: "MobX create 1,000 rows",
+            iterations: 500,
+            task: () => {
+              mobxObservable({ rows: createMarketRows(1_000) });
+            },
+          },
+          {
+            name: "valtio create 1,000 rows",
+            iterations: 500,
+            task: () => {
+              proxy({ rows: createMarketRows(1_000) });
+            },
+          },
+          {
+            name: "pulse create 10,000 rows",
+            iterations: 100,
+            task: () => {
+              pulse({ rows: createMarketRows(10_000) });
+            },
+          },
+          {
+            name: "Legend-State create 10,000 rows",
+            iterations: 100,
+            task: () => {
+              legendObservable({ rows: createMarketRows(10_000) });
+            },
+          },
+          {
+            name: "MobX create 10,000 rows",
+            iterations: 100,
+            task: () => {
+              mobxObservable({ rows: createMarketRows(10_000) });
+            },
+          },
+          {
+            name: "valtio create 10,000 rows",
+            iterations: 100,
+            task: () => {
+              proxy({ rows: createMarketRows(10_000) });
+            },
+          },
+          {
+            name: "pulse replace all 1,000 rows",
+            iterations: 500,
+            setup: () => createPulseLargeTableState(1_000),
+            task: replacePulseLargeTableRows,
+          },
+          {
+            name: "Legend-State replace all 1,000 rows",
+            iterations: 500,
+            setup: () => createLegendLargeTableState(1_000),
+            task: replaceLegendLargeTableRows,
+          },
+          {
+            name: "MobX replace all 1,000 rows",
+            iterations: 500,
+            setup: () => createMobxLargeTableState(1_000),
+            task: replaceMobxLargeTableRows,
+          },
+          {
+            name: "valtio replace all 1,000 rows",
+            iterations: 500,
+            setup: () => createValtioLargeTableState(1_000),
+            task: replaceValtioLargeTableRows,
+          },
+          {
+            name: "pulse partial update every 10th row in 1,000 rows",
+            iterations: 500,
+            setup: () => createPulseLargeTableState(1_000),
+            task: updatePulseEveryTenthLargeTableRow,
+          },
+          {
+            name: "Legend-State partial update every 10th row in 1,000 rows",
+            iterations: 500,
+            setup: () => createLegendLargeTableState(1_000),
+            task: updateLegendEveryTenthLargeTableRow,
+          },
+          {
+            name: "MobX partial update every 10th row in 1,000 rows",
+            iterations: 500,
+            setup: () => createMobxLargeTableState(1_000),
+            task: updateMobxEveryTenthLargeTableRow,
+          },
+          {
+            name: "valtio partial update every 10th row in 1,000 rows",
+            iterations: 500,
+            setup: () => createValtioLargeTableState(1_000),
+            task: updateValtioEveryTenthLargeTableRow,
+          },
+          {
+            name: "pulse select focused row in 1,000 rows",
+            iterations: 1_000,
+            setup: () => createPulseLargeTableState(1_000),
+            task: selectPulseLargeTableRow,
+          },
+          {
+            name: "Legend-State select focused row in 1,000 rows",
+            iterations: 1_000,
+            setup: () => createLegendLargeTableState(1_000),
+            task: selectLegendLargeTableRow,
+          },
+          {
+            name: "MobX select focused row in 1,000 rows",
+            iterations: 1_000,
+            setup: () => createMobxLargeTableState(1_000),
+            task: selectMobxLargeTableRow,
+          },
+          {
+            name: "valtio select focused row in 1,000 rows",
+            iterations: 1_000,
+            setup: () => createValtioLargeTableState(1_000),
+            task: selectValtioLargeTableRow,
+          },
+          {
+            name: "pulse swap two rows in 1,000 rows",
+            iterations: 500,
+            setup: () => createPulseLargeTableState(1_000),
+            task: swapPulseLargeTableRows,
+          },
+          {
+            name: "Legend-State swap two rows in 1,000 rows",
+            iterations: 500,
+            setup: () => createLegendLargeTableState(1_000),
+            task: swapLegendLargeTableRows,
+          },
+          {
+            name: "MobX swap two rows in 1,000 rows",
+            iterations: 500,
+            setup: () => createMobxLargeTableState(1_000),
+            task: swapMobxLargeTableRows,
+          },
+          {
+            name: "valtio swap two rows in 1,000 rows",
+            iterations: 500,
+            setup: () => createValtioLargeTableState(1_000),
+            task: swapValtioLargeTableRows,
+          },
+          {
+            name: "pulse remove one row from 1,000 rows",
+            iterations: 500,
+            setup: () => createPulseLargeTableState(1_000),
+            task: removePulseLargeTableRow,
+          },
+          {
+            name: "Legend-State remove one row from 1,000 rows",
+            iterations: 500,
+            setup: () => createLegendLargeTableState(1_000),
+            task: removeLegendLargeTableRow,
+          },
+          {
+            name: "MobX remove one row from 1,000 rows",
+            iterations: 500,
+            setup: () => createMobxLargeTableState(1_000),
+            task: removeMobxLargeTableRow,
+          },
+          {
+            name: "valtio remove one row from 1,000 rows",
+            iterations: 500,
+            setup: () => createValtioLargeTableState(1_000),
+            task: removeValtioLargeTableRow,
+          },
+          {
+            name: "pulse append 1,000 rows to 10,000 rows",
+            iterations: 100,
+            setup: () => createPulseLargeTableState(10_000),
+            task: appendPulseLargeTableRows,
+          },
+          {
+            name: "Legend-State append 1,000 rows to 10,000 rows",
+            iterations: 100,
+            setup: () => createLegendLargeTableState(10_000),
+            task: appendLegendLargeTableRows,
+          },
+          {
+            name: "MobX append 1,000 rows to 10,000 rows",
+            iterations: 100,
+            setup: () => createMobxLargeTableState(10_000),
+            task: appendMobxLargeTableRows,
+          },
+          {
+            name: "valtio append 1,000 rows to 10,000 rows",
+            iterations: 100,
+            setup: () => createValtioLargeTableState(10_000),
+            task: appendValtioLargeTableRows,
+          },
+          {
+            name: "pulse clear 1,000 rows",
+            iterations: 1_000,
+            setup: () => createPulseLargeTableState(1_000),
+            task: clearPulseLargeTableRows,
+          },
+          {
+            name: "Legend-State clear 1,000 rows",
+            iterations: 1_000,
+            setup: () => createLegendLargeTableState(1_000),
+            task: clearLegendLargeTableRows,
+          },
+          {
+            name: "MobX clear 1,000 rows",
+            iterations: 1_000,
+            setup: () => createMobxLargeTableState(1_000),
+            task: clearMobxLargeTableRows,
+          },
+          {
+            name: "valtio clear 1,000 rows",
+            iterations: 1_000,
+            setup: () => createValtioLargeTableState(1_000),
+            task: clearValtioLargeTableRows,
+          },
+        ],
+      },
+      {
+        title: "Derived Consumer Costs",
+        cases: [
+          {
+            name: "pulse relevant source write",
+            iterations: 5_000,
+            setup: createPulseDerivedConsumerState,
+            task: writePulseDerivedSource,
+            teardown: teardownPulseDerivedConsumerState,
+          },
+          {
+            name: "Legend-State relevant source write",
+            iterations: 5_000,
+            setup: createLegendDerivedConsumerState,
+            task: writeLegendDerivedSource,
+            teardown: teardownLegendDerivedConsumerState,
+          },
+          {
+            name: "MobX relevant source write",
+            iterations: 5_000,
+            setup: createMobxDerivedConsumerState,
+            task: writeMobxDerivedSource,
+            teardown: teardownMobxDerivedConsumerState,
+          },
+          {
+            name: "valtio relevant source write",
+            iterations: 5_000,
+            setup: createValtioDerivedConsumerState,
+            task: writeValtioDerivedSource,
+            teardown: teardownValtioDerivedConsumerState,
+          },
+          {
+            name: "pulse unrelated source write",
+            iterations: 5_000,
+            setup: createPulseDerivedConsumerState,
+            task: writePulseUnrelatedDerivedSource,
+            teardown: teardownPulseDerivedConsumerState,
+          },
+          {
+            name: "Legend-State unrelated source write",
+            iterations: 5_000,
+            setup: createLegendDerivedConsumerState,
+            task: writeLegendUnrelatedDerivedSource,
+            teardown: teardownLegendDerivedConsumerState,
+          },
+          {
+            name: "MobX unrelated source write",
+            iterations: 5_000,
+            setup: createMobxDerivedConsumerState,
+            task: writeMobxUnrelatedDerivedSource,
+            teardown: teardownMobxDerivedConsumerState,
+          },
+          {
+            name: "valtio unrelated source write",
+            iterations: 5_000,
+            setup: createValtioDerivedConsumerState,
+            task: writeValtioUnrelatedDerivedSource,
+            teardown: teardownValtioDerivedConsumerState,
+          },
+          {
+            name: "pulse batched dual-source write",
+            iterations: 3_000,
+            setup: createPulseDerivedConsumerState,
+            task: batchWritePulseDerivedSources,
+            teardown: teardownPulseDerivedConsumerState,
+          },
+          {
+            name: "Legend-State batched dual-source write",
+            iterations: 3_000,
+            setup: createLegendDerivedConsumerState,
+            task: batchWriteLegendDerivedSources,
+            teardown: teardownLegendDerivedConsumerState,
+          },
+          {
+            name: "MobX batched dual-source write",
+            iterations: 3_000,
+            setup: createMobxDerivedConsumerState,
+            task: batchWriteMobxDerivedSources,
+            teardown: teardownMobxDerivedConsumerState,
+          },
+          {
+            name: "valtio batched dual-source write",
+            iterations: 3_000,
+            setup: createValtioDerivedConsumerState,
+            task: batchWriteValtioDerivedSources,
+            teardown: teardownValtioDerivedConsumerState,
+          },
+        ],
+      },
+      {
+        title: "Batch Collapse Costs",
+        cases: [
+          {
+            name: "pulse same leaf written twice in coordinated update",
+            iterations: 5_000,
+            setup: createPulseDerivedConsumerState,
+            task: batchWritePulseSameLeafTwice,
+            teardown: teardownPulseDerivedConsumerState,
+          },
+          {
+            name: "Legend-State same leaf written twice in coordinated update",
+            iterations: 5_000,
+            setup: createLegendDerivedConsumerState,
+            task: batchWriteLegendSameLeafTwice,
+            teardown: teardownLegendDerivedConsumerState,
+          },
+          {
+            name: "MobX same leaf written twice in coordinated update",
+            iterations: 5_000,
+            setup: createMobxDerivedConsumerState,
+            task: batchWriteMobxSameLeafTwice,
+            teardown: teardownMobxDerivedConsumerState,
+          },
+          {
+            name: "valtio same leaf written twice in coordinated update",
+            iterations: 5_000,
+            setup: createValtioDerivedConsumerState,
+            task: batchWriteValtioSameLeafTwice,
+            teardown: teardownValtioDerivedConsumerState,
+          },
+        ],
+      },
+      {
+        title: "Listener Selectivity Costs",
+        cases: [
+          {
+            name: "pulse write one subscribed leaf among 100 listeners",
+            iterations: 2_000,
+            setup: createPulseListenerSelectivityState,
+            task: writePulseSelectedLeaf,
+            teardown: teardownPulseListenerSelectivityState,
+          },
+          {
+            name: "Legend-State write one subscribed leaf among 100 listeners",
+            iterations: 2_000,
+            setup: createLegendListenerSelectivityState,
+            task: writeLegendSelectedLeaf,
+            teardown: teardownLegendListenerSelectivityState,
+          },
+          {
+            name: "MobX write one subscribed leaf among 100 listeners",
+            iterations: 2_000,
+            setup: createMobxListenerSelectivityState,
+            task: writeMobxSelectedLeaf,
+            teardown: teardownMobxListenerSelectivityState,
+          },
+          {
+            name: "valtio write one subscribed leaf among 100 listeners",
+            iterations: 2_000,
+            setup: createValtioListenerSelectivityState,
+            task: writeValtioSelectedLeaf,
+            teardown: teardownValtioListenerSelectivityState,
+          },
+          {
+            name: "pulse write unsubscribed leaf with 100 unrelated listeners",
+            iterations: 2_000,
+            setup: createPulseListenerSelectivityState,
+            task: writePulseUnselectedLeaf,
+            teardown: teardownPulseListenerSelectivityState,
+          },
+          {
+            name: "Legend-State write unsubscribed leaf with 100 unrelated listeners",
+            iterations: 2_000,
+            setup: createLegendListenerSelectivityState,
+            task: writeLegendUnselectedLeaf,
+            teardown: teardownLegendListenerSelectivityState,
+          },
+          {
+            name: "MobX write unsubscribed leaf with 100 unrelated listeners",
+            iterations: 2_000,
+            setup: createMobxListenerSelectivityState,
+            task: writeMobxUnselectedLeaf,
+            teardown: teardownMobxListenerSelectivityState,
+          },
+          {
+            name: "valtio write unsubscribed leaf with 100 unrelated listeners",
+            iterations: 2_000,
+            setup: createValtioListenerSelectivityState,
+            task: writeValtioUnselectedLeaf,
+            teardown: teardownValtioListenerSelectivityState,
           },
         ],
       },
