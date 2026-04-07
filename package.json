@@ -1,6 +1,6 @@
 {
   "name": "@ochairo/pulse",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Path-aware reactive runtime with explicit get/set/on semantics",
   "type": "module",
   "main": "./dist/index.js",

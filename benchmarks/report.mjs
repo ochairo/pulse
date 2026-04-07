@@ -1,5 +1,4 @@
 import { fileURLToPath } from "node:url";
-import { runComparisonBenchmarkSuite } from "./compare.mjs";
 import { runPulseBenchmarkSuite } from "./runtime.mjs";
 import { getEnvironment, writeJsonReport, writeTextReport } from "./shared.mjs";
 
@@ -392,6 +391,7 @@ async function main(argv = process.argv.slice(2)) {
   let comparison;
   if (options.includeComparison) {
     console.log("Running comparison suite...");
+    const { runComparisonBenchmarkSuite } = await import("./compare.mjs");
     comparison = runComparisonBenchmarkSuite({
       preset: options.preset,
       quiet: true,
