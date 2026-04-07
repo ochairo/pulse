@@ -1,5 +1,4 @@
 import { fileURLToPath } from "node:url";
-import { runPulseBenchmarkSuite } from "./runtime.mjs";
 import { getEnvironment, writeJsonReport, writeTextReport } from "./shared.mjs";
 
 const COMPARISON_LIBRARIES = ["pulse", "Legend-State", "MobX", "valtio"];
@@ -401,6 +400,7 @@ async function main(argv = process.argv.slice(2)) {
   let pulse;
   if (options.includePulse) {
     console.log("Running pulse suite...");
+    const { runPulseBenchmarkSuite } = await import("./runtime.mjs");
     pulse = runPulseBenchmarkSuite({
       preset: options.preset,
       quiet: true,
