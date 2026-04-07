@@ -70,6 +70,9 @@ state.user.batch;
 // @ts-expect-error open-ended array elements must be narrowed before deep access
 state.rows[0].id;
 
+// @ts-expect-error non-index array prop access is not an exact path
+state.rows.prop("id");
+
 // @ts-expect-error function-valued leaves are atomic and cannot be traversed
 actionState.user.action.name;
 

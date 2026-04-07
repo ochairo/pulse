@@ -3,6 +3,20 @@ import { dirname } from "node:path";
 import { performance } from "node:perf_hooks";
 
 export const SECTION_DIVIDER = "-".repeat(72);
+const BENCHMARK_PRESETS = {
+  full: {
+    maxCalibrationScale: 1_024,
+    minSampleDurationMs: 40,
+    sampleCount: 5,
+    warmupIterations: 25,
+  },
+  quick: {
+    maxCalibrationScale: 64,
+    minSampleDurationMs: 12,
+    sampleCount: 3,
+    warmupIterations: 10,
+  },
+};
 
 export function createDeepState(depth) {
   let value = { leaf: 0 };
@@ -41,6 +55,54 @@ export function createUsers(length) {
     name: `User ${index}`,
     age: 20 + (index % 20),
   }));
+}
+
+export function createMarketRows(length) {
+  return Array.from({ length }, (_, index) => ({
+    id: index,
+    symbol: `SYM-${index % 12}`,
+    venue: `V-${index % 6}`,
+    price: 100 + index * 0.1,
+    volume: 100_000 + index * 13,
+    change: (index % 9) - 4,
+    trades: 25 + (index % 50),
+    heat: 10 + (index % 90),
+    focused: index === 0,
+  }));
+}
+
+export function createWorkspaceState(projects = 24, tasksPerProject = 32) {
+  return {
+    session: {
+      user: {
+        id: "user-1",
+        profile: {
+          name: "Aiko",
+          role: "admin",
+          timezone: "UTC",
+        },
+      },
+      preferences: {
+        theme: "light",
+        density: "comfortable",
+        locale: "en-US",
+      },
+    },
+    projects: Array.from({ length: projects }, (_, projectIndex) => ({
+      id: `project-${projectIndex}`,
+      title: `Project ${projectIndex}`,
+      stats: {
+        open: tasksPerProject,
+        done: 0,
+      },
+      tasks: Array.from({ length: tasksPerProject }, (_, taskIndex) => ({
+        id: `task-${projectIndex}-${taskIndex}`,
+        title: `Task ${taskIndex}`,
+        done: false,
+        priority: taskIndex % 4,
+      })),
+    })),
+  };
 }
 
 export function createEditableTable(rows, days) {
@@ -112,33 +174,134 @@ export function getEnvironment() {
   };
 }
 
-function measureCase(benchmark) {
-  const context = benchmark.setup?.();
+function measureCase(benchmark, runConfig) {
+  const sampleCount = benchmark.sampleCount ?? runConfig.sampleCount;
+  const operationsPerSample = resolveOperationsPerSample(benchmark, runConfig);
+  const samplesMs = [];
+  let totalDurationMs = 0;
+
+  for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
+    const context = benchmark.setup?.();
+
+    try {
+      runBenchmarkIterations(
+        benchmark,
+        context,
+        Math.min(runConfig.warmupIterations, operationsPerSample),
+      );
+
+      const start = performance.now();
+      runBenchmarkIterations(benchmark, context, operationsPerSample);
+
+      const durationMs = performance.now() - start;
+      totalDurationMs += durationMs;
+      samplesMs.push(durationMs / operationsPerSample);
+    } finally {
+      benchmark.teardown?.(context);
+    }
+  }
+
+  const sortedSamplesMs = [...samplesMs].sort((left, right) => left - right);
+  const averageMs = totalDurationMs / (operationsPerSample * sampleCount);
+  const medianMs =
+    sortedSamplesMs[Math.floor(sortedSamplesMs.length / 2)] ?? averageMs;
+  const minMs = sortedSamplesMs[0] ?? averageMs;
+  const maxMs = sortedSamplesMs[sortedSamplesMs.length - 1] ?? averageMs;
+  const variance =
+    samplesMs.reduce((total, sampleMs) => {
+      const delta = sampleMs - averageMs;
+      return total + delta * delta;
+    }, 0) / samplesMs.length;
+  const standardDeviationMs = Math.sqrt(variance);
+  const relativeStdDevPct =
+    averageMs === 0 ? 0 : (standardDeviationMs / averageMs) * 100;
+
+  return {
+    averageMs,
+    durationMs: totalDurationMs,
+    maxMs,
+    medianMs,
+    minMs,
+    operationsPerSample,
+    relativeStdDevPct,
+    sampleCount,
+  };
+}
+
+function resolveOperationsPerSample(benchmark, runConfig) {
+  const baseIterations = benchmark.iterations;
+
+  if (benchmark.calibrate === false) {
+    return baseIterations;
+  }
+
+  const calibrationContext = benchmark.setup?.();
 
   try {
-    for (let index = 0; index < 25; index += 1) {
-      benchmark.task(context);
+    runBenchmarkIterations(
+      benchmark,
+      calibrationContext,
+      Math.min(runConfig.warmupIterations, baseIterations),
+    );
+
+    let operationsPerSample = baseIterations;
+    let durationMs = measureBenchmarkDuration(
+      benchmark,
+      calibrationContext,
+      operationsPerSample,
+    );
+
+    while (
+      durationMs < runConfig.minSampleDurationMs &&
+      operationsPerSample < baseIterations * runConfig.maxCalibrationScale
+    ) {
+      const growthFactor = Math.min(
+        16,
+        Math.max(
+          2,
+          Math.ceil(runConfig.minSampleDurationMs / Math.max(durationMs, 0.25)),
+        ),
+      );
+      const nextOperationsPerSample = Math.min(
+        baseIterations * runConfig.maxCalibrationScale,
+        operationsPerSample * growthFactor,
+      );
+
+      if (nextOperationsPerSample === operationsPerSample) {
+        break;
+      }
+
+      operationsPerSample = nextOperationsPerSample;
+      durationMs = measureBenchmarkDuration(
+        benchmark,
+        calibrationContext,
+        operationsPerSample,
+      );
     }
 
-    const start = performance.now();
-
-    for (let index = 0; index < benchmark.iterations; index += 1) {
-      benchmark.task(context);
-    }
-
-    const durationMs = performance.now() - start;
-    return {
-      durationMs,
-      averageMs: durationMs / benchmark.iterations,
-    };
+    return operationsPerSample;
   } finally {
-    benchmark.teardown?.(context);
+    benchmark.teardown?.(calibrationContext);
+  }
+}
+
+function measureBenchmarkDuration(benchmark, context, iterations) {
+  const start = performance.now();
+  runBenchmarkIterations(benchmark, context, iterations);
+  return performance.now() - start;
+}
+
+function runBenchmarkIterations(benchmark, context, iterations) {
+  for (let index = 0; index < iterations; index += 1) {
+    benchmark.task(context);
   }
 }
 
 export function runBenchmarkSuite(suiteTitle, sections, options = {}) {
   const { quiet = false } = options;
+  const runConfig = createBenchmarkRunConfig(options);
   const suite = {
+    benchmarkPreset: runConfig.preset,
     title: suiteTitle,
     environment: getEnvironment(),
     sections: [],
@@ -161,19 +324,25 @@ export function runBenchmarkSuite(suiteTitle, sections, options = {}) {
     }
 
     for (const benchmark of section.cases) {
-      const result = measureCase(benchmark);
+      const result = measureCase(benchmark, runConfig);
       const benchmarkResult = {
         name: benchmark.name,
-        iterations: benchmark.iterations,
         averageMs: result.averageMs,
+        configuredIterations: benchmark.iterations,
         durationMs: result.durationMs,
+        iterations: result.operationsPerSample,
+        maxMs: result.maxMs,
+        medianMs: result.medianMs,
+        minMs: result.minMs,
+        relativeStdDevPct: result.relativeStdDevPct,
+        sampleCount: result.sampleCount,
       };
 
       sectionResult.cases.push(benchmarkResult);
 
       if (!quiet) {
         console.log(
-          `${benchmark.name}: ${benchmarkResult.averageMs.toFixed(3)} ms/op (${benchmark.iterations} iterations)`,
+          `${benchmark.name}: median ${formatBenchmarkDuration(benchmarkResult.medianMs)}, mean ${formatBenchmarkDuration(benchmarkResult.averageMs)}, rsd ${benchmarkResult.relativeStdDevPct.toFixed(1)}% (${benchmarkResult.iterations} ops/sample from base ${benchmarkResult.configuredIterations}, ${benchmarkResult.sampleCount} samples)`,
         );
       }
     }
@@ -184,6 +353,20 @@ export function runBenchmarkSuite(suiteTitle, sections, options = {}) {
   return suite;
 }
 
+export function createBenchmarkRunConfig(options = {}) {
+  const presetName = options.preset ?? "full";
+  const preset = BENCHMARK_PRESETS[presetName];
+
+  if (!preset) {
+    throw new TypeError(`Unknown benchmark preset: ${String(presetName)}.`);
+  }
+
+  return {
+    ...preset,
+    preset: presetName,
+  };
+}
+
 export async function writeJsonReport(filePath, report) {
   await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
@@ -192,4 +375,12 @@ export async function writeJsonReport(filePath, report) {
 export async function writeTextReport(filePath, text) {
   await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, text, "utf8");
+}
+
+function formatBenchmarkDuration(valueMs) {
+  if (valueMs < 0.001) {
+    return `${(valueMs * 1_000_000).toFixed(0)} ns/op`;
+  }
+
+  return `${valueMs.toFixed(3)} ms/op`;
 }

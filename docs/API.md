@@ -1,5 +1,14 @@
 # API
 
+`pulse` is path-aware and exact-path by design: reads stay scoped to the concrete node you access, and `on()` subscribes only to that node.
+
+That exact-path rule is the core mental model:
+
+- reading `state.user.name.get()` reads only `user.name`
+- subscribing with `state.user.name.on(...)` listens only to `user.name`
+- subscribing with `state.user.on(...)` does not listen to descendant-only changes under `user`
+- replacing an ancestor can still notify a descendant when the descendant value actually changes as a result
+
 ## `pulse(initialValue)`
 
 Creates a root pulse node.
@@ -66,6 +75,19 @@ state.prop("then").get(); // "value"
 state.prop("batch").get(); // 1
 ```
 
+`prop(key)` stays exact-path only. On arrays, only concrete child keys are supported: numeric indexes and `"length"`.
+
+```ts
+const users = pulse([
+  { name: "Ada", age: 30 },
+  { name: "Paul", age: 25 },
+]);
+
+users.prop(0)?.prop("name").on((event) => {
+  console.log(event.currentValue);
+});
+```
+
 ## `node.set(nextValue)`
 
 Writes the next value and notifies listeners when the write succeeds.
@@ -94,18 +116,20 @@ const unsubscribe = count.on((event) => {
 });
 ```
 
-Listeners are ancestor-aware.
+Listeners are exact-path subscriptions.
 
 ```ts
 const state = pulse({ user: { name: "Ada" } });
 
-state.on((event) => {
+state.user.name.on((event) => {
   console.log(event.changes[0]?.path); // ["user", "name"]
   console.log(event.changes[0]?.key); // "name"
 });
 
 state.user.name.set("Grace");
 ```
+
+An exact listener fires when its own path changes directly, or when an ancestor replacement changes the value at that path. It does not fire for unrelated descendant mutations on a broader object or array node.
 
 Listeners run with snapshot semantics. If one listener throws, later listeners still run and the first error is rethrown after dispatch completes. Each mutation also exposes `key`, which is the last segment of its absolute path.
 
@@ -130,3 +154,21 @@ Reserved names can still be reached through `prop(key)`.
 ## `isPulse(value)`
 
 Checks whether a value is an authentic pulse instance.
+
+## Benchmark Report
+
+`docs/BENCHMARKS.md` is generated, not handwritten.
+
+Run:
+
+```sh
+pnpm benchmark:report
+```
+
+The generated report may show:
+
+- median and mean timings
+- relative standard deviation
+- sample count
+- calibrated operations per sample for very fast benchmarks
+- `ns/op` for extremely small operations instead of rounded `0.000 ms/op`

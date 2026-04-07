@@ -16,6 +16,7 @@ import {
   createDeepState,
   createEditableTable,
   createUsers,
+  createWorkspaceState,
   getTableCell,
   replaceManyUsers,
   runBenchmarkSuite,
@@ -82,6 +83,325 @@ function createValtioTableState() {
   };
 }
 
+function createPulseDeepReadState() {
+  const depth = 100;
+
+  return {
+    depth,
+    state: pulse(createDeepState(depth)),
+  };
+}
+
+function createLegendDeepReadState() {
+  const depth = 100;
+
+  return {
+    depth,
+    state: legendObservable(createDeepState(depth)),
+  };
+}
+
+function createMobxDeepReadState() {
+  const depth = 100;
+
+  return {
+    depth,
+    state: mobxObservable(createDeepState(depth)),
+  };
+}
+
+function createValtioDeepReadState() {
+  const depth = 100;
+
+  return {
+    depth,
+    state: proxy(createDeepState(depth)),
+  };
+}
+
+function readPulseDeepLeaf(state) {
+  let node = state.state;
+
+  for (let level = 0; level < state.depth; level += 1) {
+    node = node.child;
+  }
+
+  node.leaf.get();
+}
+
+function readLegendDeepLeaf(state) {
+  let node = state.state;
+
+  for (let level = 0; level < state.depth; level += 1) {
+    node = node.child;
+  }
+
+  node.leaf.get();
+}
+
+function readMobxDeepLeaf(state) {
+  let node = state.state;
+
+  for (let level = 0; level < state.depth; level += 1) {
+    node = node.child;
+  }
+
+  node.leaf;
+}
+
+function readValtioDeepLeaf(state) {
+  let node = state.state;
+
+  for (let level = 0; level < state.depth; level += 1) {
+    node = node.child;
+  }
+
+  node.leaf;
+}
+
+function readPulseTableCell(state) {
+  getTableCell(state.table, 42, 511)?.get();
+}
+
+function readLegendTableCell(state) {
+  getLegendTablePoint(state.table, 42, 511).value.get();
+}
+
+function readMobxTableCell(state) {
+  getMobxTablePoint(state.table, 42, 511).value;
+}
+
+function readValtioTableCell(state) {
+  getValtioTablePoint(state.table, 42, 511).value;
+}
+
+function attachPulseVisibleWindowListeners(table) {
+  const unsubscribers = [];
+
+  for (let rowIndex = 20; rowIndex < 40; rowIndex += 1) {
+    for (let dayIndex = 500; dayIndex < 530; dayIndex += 1) {
+      const unsubscribe = getTableCell(table, rowIndex, dayIndex)?.on(() => {});
+
+      if (unsubscribe) {
+        unsubscribers.push(unsubscribe);
+      }
+    }
+  }
+
+  return unsubscribers;
+}
+
+function attachLegendVisibleWindowListeners(table) {
+  const disposers = [];
+
+  for (let rowIndex = 20; rowIndex < 40; rowIndex += 1) {
+    for (let dayIndex = 500; dayIndex < 530; dayIndex += 1) {
+      disposers.push(
+        getLegendTablePoint(table, rowIndex, dayIndex).value.onChange(() => {}),
+      );
+    }
+  }
+
+  return disposers;
+}
+
+function attachMobxVisibleWindowListeners(table) {
+  const disposers = [];
+
+  for (let rowIndex = 20; rowIndex < 40; rowIndex += 1) {
+    for (let dayIndex = 500; dayIndex < 530; dayIndex += 1) {
+      disposers.push(
+        observe(table.rows[rowIndex].points[dayIndex], "value", () => {}),
+      );
+    }
+  }
+
+  return disposers;
+}
+
+function attachValtioVisibleWindowListeners(table) {
+  const unsubscribers = [];
+
+  for (let rowIndex = 20; rowIndex < 40; rowIndex += 1) {
+    for (let dayIndex = 500; dayIndex < 530; dayIndex += 1) {
+      unsubscribers.push(
+        subscribeValtioSync(table.rows[rowIndex].points[dayIndex], () => {}),
+      );
+    }
+  }
+
+  return unsubscribers;
+}
+
+function disposeCallbacks(callbacks) {
+  for (const callback of callbacks) {
+    callback();
+  }
+}
+
+function createPulseWorkspaceState() {
+  return {
+    workspace: pulse(createWorkspaceState(24, 32)),
+    nextValue: 0,
+  };
+}
+
+function createLegendWorkspaceState() {
+  return {
+    workspace: legendObservable(createWorkspaceState(24, 32)),
+    nextValue: 0,
+  };
+}
+
+function createMobxWorkspaceState() {
+  return {
+    workspace: mobxObservable(createWorkspaceState(24, 32)),
+    nextValue: 0,
+  };
+}
+
+function createValtioWorkspaceState() {
+  return {
+    workspace: proxy(createWorkspaceState(24, 32)),
+    nextValue: 0,
+  };
+}
+
+function createPulseRootSubscriptionState() {
+  return {
+    state: pulse({ count: 0 }),
+    nextValue: 0,
+  };
+}
+
+function createLegendRootSubscriptionState() {
+  return {
+    state: legendObservable({ count: 0 }),
+    nextValue: 0,
+  };
+}
+
+function createMobxRootSubscriptionState() {
+  return {
+    state: mobxObservable({ count: 0 }),
+    nextValue: 0,
+  };
+}
+
+function createValtioRootSubscriptionState() {
+  return {
+    state: proxy({ count: 0 }),
+    nextValue: 0,
+  };
+}
+
+function subscribePulseRoot(state, callback) {
+  return state.state.on(callback);
+}
+
+function subscribeLegendRoot(state, callback) {
+  return state.state.onChange(callback);
+}
+
+function subscribeMobxRoot(state, callback) {
+  return autorun(() => {
+    state.state.count;
+    callback();
+  });
+}
+
+function subscribeValtioRoot(state, callback) {
+  return subscribeValtioSync(state.state, callback);
+}
+
+function writePulseRoot(state) {
+  state.nextValue += 1;
+  state.state.count.set(state.nextValue);
+}
+
+function writeLegendRoot(state) {
+  state.nextValue += 1;
+  state.state.count.set(state.nextValue);
+}
+
+function writeMobxRoot(state) {
+  state.nextValue += 1;
+  runInAction(() => {
+    state.state.count = state.nextValue;
+  });
+}
+
+function writeValtioRoot(state) {
+  state.nextValue += 1;
+  state.state.count = state.nextValue;
+}
+
+function createPulseLeafSubscriptionState() {
+  return {
+    users: pulse(createUsers(2)),
+    nextValue: 0,
+  };
+}
+
+function createLegendLeafSubscriptionState() {
+  return {
+    users: legendObservable(createUsers(2)),
+    nextValue: 0,
+  };
+}
+
+function createMobxLeafSubscriptionState() {
+  return {
+    users: mobxObservable(createUsers(2)),
+    nextValue: 0,
+  };
+}
+
+function createValtioLeafSubscriptionState() {
+  return {
+    users: proxy(createUsers(2)),
+    nextValue: 0,
+  };
+}
+
+function subscribePulseLeaf(state, callback) {
+  return state.users[0]?.name.on(callback);
+}
+
+function subscribeLegendLeaf(state, callback) {
+  return state.users[0].name.onChange(callback);
+}
+
+function subscribeMobxLeaf(state, callback) {
+  return observe(state.users[0], "name", callback);
+}
+
+function subscribeValtioLeaf(state, callback) {
+  return subscribeValtioSync(state.users[0], callback);
+}
+
+function writePulseLeaf(state) {
+  state.nextValue += 1;
+  state.users[0]?.name.set(`User ${state.nextValue}`);
+}
+
+function writeLegendLeaf(state) {
+  state.nextValue += 1;
+  state.users[0].name.set(`User ${state.nextValue}`);
+}
+
+function writeMobxLeaf(state) {
+  state.nextValue += 1;
+  runInAction(() => {
+    state.users[0].name = `User ${state.nextValue}`;
+  });
+}
+
+function writeValtioLeaf(state) {
+  state.nextValue += 1;
+  state.users[0].name = `User ${state.nextValue}`;
+}
+
 function subscribeValtioSync(target, callback) {
   return subscribe(target, callback, true);
 }
@@ -108,6 +428,140 @@ function writeMobxCell(state, rowIndex, dayIndex) {
 function writeValtioCell(state, rowIndex, dayIndex) {
   state.nextValue += 1;
   getValtioTablePoint(state.table, rowIndex, dayIndex).value = state.nextValue;
+}
+
+function writePulseWorkspaceProfileName(state) {
+  state.nextValue += 1;
+  state.workspace.session.user.profile.name.set(`User ${state.nextValue}`);
+}
+
+function writeLegendWorkspaceProfileName(state) {
+  state.nextValue += 1;
+  state.workspace.session.user.profile.name.set(`User ${state.nextValue}`);
+}
+
+function writeMobxWorkspaceProfileName(state) {
+  state.nextValue += 1;
+  runInAction(() => {
+    state.workspace.session.user.profile.name = `User ${state.nextValue}`;
+  });
+}
+
+function writeValtioWorkspaceProfileName(state) {
+  state.nextValue += 1;
+  state.workspace.session.user.profile.name = `User ${state.nextValue}`;
+}
+
+function writePulseWorkspaceTaskDone(state) {
+  state.nextValue += 1;
+  state.workspace.projects[12]?.tasks[18]?.done.set(state.nextValue % 2 === 0);
+}
+
+function writeLegendWorkspaceTaskDone(state) {
+  state.nextValue += 1;
+  state.workspace.projects[12].tasks[18].done.set(state.nextValue % 2 === 0);
+}
+
+function writeMobxWorkspaceTaskDone(state) {
+  state.nextValue += 1;
+  runInAction(() => {
+    state.workspace.projects[12].tasks[18].done = state.nextValue % 2 === 0;
+  });
+}
+
+function writeValtioWorkspaceTaskDone(state) {
+  state.nextValue += 1;
+  state.workspace.projects[12].tasks[18].done = state.nextValue % 2 === 0;
+}
+
+function writePulseWorkspacePreferences(state) {
+  state.nextValue += 1;
+  state.workspace.batch(() => {
+    state.workspace.session.preferences.theme.set(
+      state.nextValue % 2 === 0 ? "dark" : "light",
+    );
+    state.workspace.session.preferences.density.set(
+      state.nextValue % 2 === 0 ? "compact" : "comfortable",
+    );
+    state.workspace.session.preferences.locale.set(
+      state.nextValue % 2 === 0 ? "ja-JP" : "en-US",
+    );
+  });
+}
+
+function writeLegendWorkspacePreferences(state) {
+  state.nextValue += 1;
+  legendBatch(() => {
+    state.workspace.session.preferences.theme.set(
+      state.nextValue % 2 === 0 ? "dark" : "light",
+    );
+    state.workspace.session.preferences.density.set(
+      state.nextValue % 2 === 0 ? "compact" : "comfortable",
+    );
+    state.workspace.session.preferences.locale.set(
+      state.nextValue % 2 === 0 ? "ja-JP" : "en-US",
+    );
+  });
+}
+
+function writeMobxWorkspacePreferences(state) {
+  state.nextValue += 1;
+  runInAction(() => {
+    state.workspace.session.preferences.theme =
+      state.nextValue % 2 === 0 ? "dark" : "light";
+    state.workspace.session.preferences.density =
+      state.nextValue % 2 === 0 ? "compact" : "comfortable";
+    state.workspace.session.preferences.locale =
+      state.nextValue % 2 === 0 ? "ja-JP" : "en-US";
+  });
+}
+
+function writeValtioWorkspacePreferences(state) {
+  state.nextValue += 1;
+  state.workspace.session.preferences.theme =
+    state.nextValue % 2 === 0 ? "dark" : "light";
+  state.workspace.session.preferences.density =
+    state.nextValue % 2 === 0 ? "compact" : "comfortable";
+  state.workspace.session.preferences.locale =
+    state.nextValue % 2 === 0 ? "ja-JP" : "en-US";
+}
+
+function writePulseWorkspaceTaskFields(state) {
+  state.nextValue += 1;
+  state.workspace.batch(() => {
+    state.workspace.projects[12]?.tasks[18]?.title.set(
+      `Task ${state.nextValue}`,
+    );
+    state.workspace.projects[12]?.tasks[18]?.done.set(
+      state.nextValue % 2 === 0,
+    );
+    state.workspace.projects[12]?.tasks[18]?.priority.set(state.nextValue % 4);
+  });
+}
+
+function writeLegendWorkspaceTaskFields(state) {
+  state.nextValue += 1;
+  legendBatch(() => {
+    state.workspace.projects[12].tasks[18].title.set(`Task ${state.nextValue}`);
+    state.workspace.projects[12].tasks[18].done.set(state.nextValue % 2 === 0);
+    state.workspace.projects[12].tasks[18].priority.set(state.nextValue % 4);
+  });
+}
+
+function writeMobxWorkspaceTaskFields(state) {
+  state.nextValue += 1;
+  runInAction(() => {
+    state.workspace.projects[12].tasks[18].title = `Task ${state.nextValue}`;
+    state.workspace.projects[12].tasks[18].done = state.nextValue % 2 === 0;
+    state.workspace.projects[12].tasks[18].priority = state.nextValue % 4;
+  });
+}
+
+function writeValtioWorkspaceTaskFields(state) {
+  state.nextValue += 1;
+  state.workspace.projects[12].tasks[18].title = `Task ${state.nextValue}`;
+  state.workspace.projects[12].tasks[18].done = state.nextValue % 2 === 0;
+  state.workspace.projects[12].tasks[18].priority = state.nextValue % 4;
 }
 
 function createPulseBulkState(withRowListeners = false) {
@@ -693,6 +1147,91 @@ export function runComparisonBenchmarkSuite(options = {}) {
     "comparison benchmark",
     [
       {
+        title: "Hot Read Costs",
+        cases: [
+          {
+            name: "pulse root read",
+            iterations: 25_000,
+            setup: createPulseRootSubscriptionState,
+            task: (state) => {
+              state.state.get();
+            },
+          },
+          {
+            name: "Legend-State root read",
+            iterations: 25_000,
+            setup: createLegendRootSubscriptionState,
+            task: (state) => {
+              state.state.get();
+            },
+          },
+          {
+            name: "MobX root read",
+            iterations: 25_000,
+            setup: createMobxRootSubscriptionState,
+            task: (state) => {
+              state.state.count;
+            },
+          },
+          {
+            name: "valtio root read",
+            iterations: 25_000,
+            setup: createValtioRootSubscriptionState,
+            task: (state) => {
+              state.state.count;
+            },
+          },
+          {
+            name: "pulse deep leaf read",
+            iterations: 10_000,
+            setup: createPulseDeepReadState,
+            task: readPulseDeepLeaf,
+          },
+          {
+            name: "Legend-State deep leaf read",
+            iterations: 10_000,
+            setup: createLegendDeepReadState,
+            task: readLegendDeepLeaf,
+          },
+          {
+            name: "MobX deep leaf read",
+            iterations: 10_000,
+            setup: createMobxDeepReadState,
+            task: readMobxDeepLeaf,
+          },
+          {
+            name: "valtio deep leaf read",
+            iterations: 10_000,
+            setup: createValtioDeepReadState,
+            task: readValtioDeepLeaf,
+          },
+          {
+            name: "pulse table cell read",
+            iterations: 25_000,
+            setup: createPulseTableState,
+            task: readPulseTableCell,
+          },
+          {
+            name: "Legend-State table cell read",
+            iterations: 25_000,
+            setup: createLegendTableState,
+            task: readLegendTableCell,
+          },
+          {
+            name: "MobX table cell read",
+            iterations: 25_000,
+            setup: createMobxTableState,
+            task: readMobxTableCell,
+          },
+          {
+            name: "valtio table cell read",
+            iterations: 25_000,
+            setup: createValtioTableState,
+            task: readValtioTableCell,
+          },
+        ],
+      },
+      {
         title: "Primitive Root Write",
         cases: [
           {
@@ -959,97 +1498,442 @@ export function runComparisonBenchmarkSuite(options = {}) {
         ],
       },
       {
-        title: "Root Subscription Write",
+        title: "General App Cold Update",
+        cases: [
+          {
+            name: "pulse nested object leaf",
+            iterations: 3_000,
+            task: () => {
+              const state = pulse(createWorkspaceState(24, 32));
+              state.session.user.profile.name.set("Ren");
+            },
+          },
+          {
+            name: "Legend-State nested object leaf",
+            iterations: 3_000,
+            task: () => {
+              const state = legendObservable(createWorkspaceState(24, 32));
+              state.session.user.profile.name.set("Ren");
+            },
+          },
+          {
+            name: "MobX nested object leaf",
+            iterations: 3_000,
+            task: () => {
+              const state = mobxObservable(createWorkspaceState(24, 32));
+              runInAction(() => {
+                state.session.user.profile.name = "Ren";
+              });
+            },
+          },
+          {
+            name: "valtio nested object leaf",
+            iterations: 3_000,
+            task: () => {
+              const state = proxy(createWorkspaceState(24, 32));
+              state.session.user.profile.name = "Ren";
+            },
+          },
+        ],
+      },
+      {
+        title: "General App Hot Writes",
+        cases: [
+          {
+            name: "pulse nested object leaf write",
+            iterations: 5_000,
+            setup: createPulseWorkspaceState,
+            task: writePulseWorkspaceProfileName,
+          },
+          {
+            name: "Legend-State nested object leaf write",
+            iterations: 5_000,
+            setup: createLegendWorkspaceState,
+            task: writeLegendWorkspaceProfileName,
+          },
+          {
+            name: "MobX nested object leaf write",
+            iterations: 5_000,
+            setup: createMobxWorkspaceState,
+            task: writeMobxWorkspaceProfileName,
+          },
+          {
+            name: "valtio nested object leaf write",
+            iterations: 5_000,
+            setup: createValtioWorkspaceState,
+            task: writeValtioWorkspaceProfileName,
+          },
+          {
+            name: "pulse mixed array object leaf write",
+            iterations: 3_000,
+            setup: createPulseWorkspaceState,
+            task: writePulseWorkspaceTaskDone,
+          },
+          {
+            name: "Legend-State mixed array object leaf write",
+            iterations: 3_000,
+            setup: createLegendWorkspaceState,
+            task: writeLegendWorkspaceTaskDone,
+          },
+          {
+            name: "MobX mixed array object leaf write",
+            iterations: 3_000,
+            setup: createMobxWorkspaceState,
+            task: writeMobxWorkspaceTaskDone,
+          },
+          {
+            name: "valtio mixed array object leaf write",
+            iterations: 3_000,
+            setup: createValtioWorkspaceState,
+            task: writeValtioWorkspaceTaskDone,
+          },
+          {
+            name: "pulse batched sibling object writes",
+            iterations: 3_000,
+            setup: createPulseWorkspaceState,
+            task: writePulseWorkspacePreferences,
+          },
+          {
+            name: "Legend-State batched sibling object writes",
+            iterations: 3_000,
+            setup: createLegendWorkspaceState,
+            task: writeLegendWorkspacePreferences,
+          },
+          {
+            name: "MobX batched sibling object writes",
+            iterations: 3_000,
+            setup: createMobxWorkspaceState,
+            task: writeMobxWorkspacePreferences,
+          },
+          {
+            name: "valtio batched sibling object writes",
+            iterations: 3_000,
+            setup: createValtioWorkspaceState,
+            task: writeValtioWorkspacePreferences,
+          },
+          {
+            name: "pulse batched list item multi-field writes",
+            iterations: 1_500,
+            setup: createPulseWorkspaceState,
+            task: writePulseWorkspaceTaskFields,
+          },
+          {
+            name: "Legend-State batched list item multi-field writes",
+            iterations: 1_500,
+            setup: createLegendWorkspaceState,
+            task: writeLegendWorkspaceTaskFields,
+          },
+          {
+            name: "MobX batched list item multi-field writes",
+            iterations: 1_500,
+            setup: createMobxWorkspaceState,
+            task: writeMobxWorkspaceTaskFields,
+          },
+          {
+            name: "valtio batched list item multi-field writes",
+            iterations: 1_500,
+            setup: createValtioWorkspaceState,
+            task: writeValtioWorkspaceTaskFields,
+          },
+        ],
+      },
+      {
+        title: "Root Subscription Lifecycle",
         cases: [
           {
             name: "pulse",
             iterations: 5_000,
-            task: () => {
-              const state = pulse({ count: 0 });
-              const unsubscribe = state.on(() => {});
-              state.count.set(1);
+            setup: createPulseRootSubscriptionState,
+            task: (state) => {
+              const unsubscribe = subscribePulseRoot(state, () => {});
               unsubscribe();
             },
           },
           {
             name: "Legend-State",
             iterations: 5_000,
-            task: () => {
-              const state$ = legendObservable({ count: 0 });
-              const dispose = state$.onChange(() => {});
-              state$.count.set(1);
+            setup: createLegendRootSubscriptionState,
+            task: (state) => {
+              const dispose = subscribeLegendRoot(state, () => {});
               dispose();
             },
           },
           {
             name: "MobX",
             iterations: 5_000,
-            task: () => {
-              const state = mobxObservable({ count: 0 });
-              const dispose = autorun(() => {
-                state.count;
-              });
-              runInAction(() => {
-                state.count = 1;
-              });
+            setup: createMobxRootSubscriptionState,
+            task: (state) => {
+              const dispose = subscribeMobxRoot(state, () => {});
               dispose();
             },
           },
           {
             name: "valtio",
             iterations: 5_000,
-            task: () => {
-              const state = proxy({ count: 0 });
-              const unsubscribe = subscribeValtioSync(state, () => {});
-              state.count = 1;
+            setup: createValtioRootSubscriptionState,
+            task: (state) => {
+              const unsubscribe = subscribeValtioRoot(state, () => {});
               unsubscribe();
             },
           },
         ],
       },
       {
-        title: "Leaf Subscription Write",
+        title: "Root Subscription Dispatch",
         cases: [
           {
             name: "pulse",
             iterations: 5_000,
-            task: () => {
-              const users = pulse(createUsers(2));
-              const unsubscribe = users[0]?.name.on(() => {});
-              users[0]?.name.set("Grace");
+            setup: () => {
+              const state = createPulseRootSubscriptionState();
+              state.unsubscribe = subscribePulseRoot(state, () => {});
+              return state;
+            },
+            task: writePulseRoot,
+            teardown: (state) => {
+              state.unsubscribe?.();
+            },
+          },
+          {
+            name: "Legend-State",
+            iterations: 5_000,
+            setup: () => {
+              const state = createLegendRootSubscriptionState();
+              state.dispose = subscribeLegendRoot(state, () => {});
+              return state;
+            },
+            task: writeLegendRoot,
+            teardown: (state) => {
+              state.dispose?.();
+            },
+          },
+          {
+            name: "MobX",
+            iterations: 5_000,
+            setup: () => {
+              const state = createMobxRootSubscriptionState();
+              state.dispose = subscribeMobxRoot(state, () => {});
+              return state;
+            },
+            task: writeMobxRoot,
+            teardown: (state) => {
+              state.dispose?.();
+            },
+          },
+          {
+            name: "valtio",
+            iterations: 5_000,
+            setup: () => {
+              const state = createValtioRootSubscriptionState();
+              state.unsubscribe = subscribeValtioRoot(state, () => {});
+              return state;
+            },
+            task: writeValtioRoot,
+            teardown: (state) => {
+              state.unsubscribe?.();
+            },
+          },
+        ],
+      },
+      {
+        title: "Leaf Subscription Lifecycle",
+        cases: [
+          {
+            name: "pulse",
+            iterations: 5_000,
+            setup: createPulseLeafSubscriptionState,
+            task: (state) => {
+              const unsubscribe = subscribePulseLeaf(state, () => {});
               unsubscribe?.();
             },
           },
           {
             name: "Legend-State",
             iterations: 5_000,
-            task: () => {
-              const users$ = legendObservable(createUsers(2));
-              const dispose = users$[0].name.onChange(() => {});
-              users$[0].name.set("Grace");
+            setup: createLegendLeafSubscriptionState,
+            task: (state) => {
+              const dispose = subscribeLegendLeaf(state, () => {});
               dispose();
             },
           },
           {
             name: "MobX",
             iterations: 5_000,
-            task: () => {
-              const users = mobxObservable(createUsers(2));
-              const dispose = observe(users[0], "name", () => {});
-              runInAction(() => {
-                users[0].name = "Grace";
-              });
+            setup: createMobxLeafSubscriptionState,
+            task: (state) => {
+              const dispose = subscribeMobxLeaf(state, () => {});
               dispose();
             },
           },
           {
             name: "valtio",
             iterations: 5_000,
-            task: () => {
-              const users = proxy(createUsers(2));
-              const unsubscribe = subscribeValtioSync(users[0], () => {});
-              users[0].name = "Grace";
+            setup: createValtioLeafSubscriptionState,
+            task: (state) => {
+              const unsubscribe = subscribeValtioLeaf(state, () => {});
               unsubscribe();
+            },
+          },
+        ],
+      },
+      {
+        title: "Leaf Subscription Dispatch",
+        cases: [
+          {
+            name: "pulse",
+            iterations: 5_000,
+            setup: () => {
+              const state = createPulseLeafSubscriptionState();
+              state.unsubscribe = subscribePulseLeaf(state, () => {});
+              return state;
+            },
+            task: writePulseLeaf,
+            teardown: (state) => {
+              state.unsubscribe?.();
+            },
+          },
+          {
+            name: "Legend-State",
+            iterations: 5_000,
+            setup: () => {
+              const state = createLegendLeafSubscriptionState();
+              state.dispose = subscribeLegendLeaf(state, () => {});
+              return state;
+            },
+            task: writeLegendLeaf,
+            teardown: (state) => {
+              state.dispose?.();
+            },
+          },
+          {
+            name: "MobX",
+            iterations: 5_000,
+            setup: () => {
+              const state = createMobxLeafSubscriptionState();
+              state.dispose = subscribeMobxLeaf(state, () => {});
+              return state;
+            },
+            task: writeMobxLeaf,
+            teardown: (state) => {
+              state.dispose?.();
+            },
+          },
+          {
+            name: "valtio",
+            iterations: 5_000,
+            setup: () => {
+              const state = createValtioLeafSubscriptionState();
+              state.unsubscribe = subscribeValtioLeaf(state, () => {});
+              return state;
+            },
+            task: writeValtioLeaf,
+            teardown: (state) => {
+              state.unsubscribe?.();
+            },
+          },
+        ],
+      },
+      {
+        title: "Editable Table Subscription Lifecycle",
+        cases: [
+          {
+            name: "pulse 50 row listeners subscribe and unsubscribe",
+            iterations: 500,
+            setup: createPulseTableState,
+            task: (state) => {
+              const unsubscribers = [];
+
+              for (let rowIndex = 0; rowIndex < 50; rowIndex += 1) {
+                const unsubscribe = state.table.rows[rowIndex]?.on(() => {});
+
+                if (unsubscribe) {
+                  unsubscribers.push(unsubscribe);
+                }
+              }
+
+              disposeCallbacks(unsubscribers);
+            },
+          },
+          {
+            name: "Legend-State 50 row listeners subscribe and unsubscribe",
+            iterations: 500,
+            setup: createLegendTableState,
+            task: (state) => {
+              const disposers = [];
+
+              for (let rowIndex = 0; rowIndex < 50; rowIndex += 1) {
+                disposers.push(state.table.rows[rowIndex].onChange(() => {}));
+              }
+
+              disposeCallbacks(disposers);
+            },
+          },
+          {
+            name: "MobX 50 row listeners subscribe and unsubscribe",
+            iterations: 250,
+            setup: createMobxTableState,
+            task: (state) => {
+              const disposers = [];
+
+              for (let rowIndex = 0; rowIndex < 50; rowIndex += 1) {
+                const row = state.table.rows[rowIndex];
+
+                disposers.push(
+                  autorun(() => {
+                    trackMobxRow(row);
+                  }),
+                );
+              }
+
+              disposeCallbacks(disposers);
+            },
+          },
+          {
+            name: "valtio 50 row listeners subscribe and unsubscribe",
+            iterations: 500,
+            setup: createValtioTableState,
+            task: (state) => {
+              const unsubscribers = [];
+
+              for (let rowIndex = 0; rowIndex < 50; rowIndex += 1) {
+                unsubscribers.push(
+                  subscribeValtioSync(state.table.rows[rowIndex], () => {}),
+                );
+              }
+
+              disposeCallbacks(unsubscribers);
+            },
+          },
+          {
+            name: "pulse visible window listeners subscribe and unsubscribe",
+            iterations: 100,
+            setup: createPulseTableState,
+            task: (state) => {
+              disposeCallbacks(attachPulseVisibleWindowListeners(state.table));
+            },
+          },
+          {
+            name: "Legend-State visible window listeners subscribe and unsubscribe",
+            iterations: 100,
+            setup: createLegendTableState,
+            task: (state) => {
+              disposeCallbacks(attachLegendVisibleWindowListeners(state.table));
+            },
+          },
+          {
+            name: "MobX visible window listeners subscribe and unsubscribe",
+            iterations: 50,
+            setup: createMobxTableState,
+            task: (state) => {
+              disposeCallbacks(attachMobxVisibleWindowListeners(state.table));
+            },
+          },
+          {
+            name: "valtio visible window listeners subscribe and unsubscribe",
+            iterations: 100,
+            setup: createValtioTableState,
+            task: (state) => {
+              disposeCallbacks(attachValtioVisibleWindowListeners(state.table));
             },
           },
         ],

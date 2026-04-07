@@ -1,5 +1,5 @@
 import type { Pulse } from "../contract/types.js";
-import { createPulse, isAuthenticPulse } from "../runtime/dispatcher.js";
+import { createPulse, isAuthenticPulse } from "../runtime/dispatcher/create.js";
 
 type PulseRoot<T> = Pulse<T> & {
   batch<TResult>(callback: () => TResult): TResult;

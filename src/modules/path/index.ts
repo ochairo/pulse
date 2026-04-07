@@ -38,6 +38,43 @@ export function isRelevantMutationPath(
   );
 }
 
+export function pathsMatch(left: PulsePath, right: PulsePath): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((segment, index) => Object.is(segment, right[index]));
+}
+
+export function getPulsePathKey(path: PulsePath): string {
+  if (path.length === 0) {
+    return "<root>";
+  }
+
+  let key = "";
+
+  for (const segment of path) {
+    if (segment === ARRAY_LENGTH_SEGMENT) {
+      key += "|l";
+      continue;
+    }
+
+    if (typeof segment === "number") {
+      key += `|n:${segment}`;
+      continue;
+    }
+
+    if (typeof segment === "symbol") {
+      key += `|y:${String(segment)}`;
+      continue;
+    }
+
+    key += `|s:${segment}`;
+  }
+
+  return key;
+}
+
 export function formatPulsePath(path: PulsePath): string {
   if (path.length === 0) {
     return "<root>";
@@ -100,7 +137,7 @@ function isArrayIndexString(value: string): boolean {
   return /^(0|[1-9]\d*)$/u.test(value);
 }
 
-function isPathPrefix(prefix: PulsePath, fullPath: PulsePath): boolean {
+export function isPathPrefix(prefix: PulsePath, fullPath: PulsePath): boolean {
   if (prefix.length > fullPath.length) {
     return false;
   }

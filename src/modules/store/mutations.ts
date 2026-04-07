@@ -1,5 +1,9 @@
 import type { PulseMutation } from "../contract/types.js";
-import { ARRAY_LENGTH_SEGMENT, type PulsePath } from "../path/index.js";
+import {
+  ARRAY_LENGTH_SEGMENT,
+  getPulsePathKey,
+  type PulsePath,
+} from "../path/index.js";
 import {
   getEnumerableOwnKeys,
   isPlainObject,
@@ -8,20 +12,6 @@ import {
   readExistingValue,
   type ValueState,
 } from "./state.js";
-
-export function collectPulseMutations(
-  previousRootValue: unknown,
-  currentRootValue: unknown,
-): readonly PulseMutation[] {
-  const mutations: PulseMutation[] = [];
-  collectMutations(
-    readExistingValue(previousRootValue),
-    readExistingValue(currentRootValue),
-    [],
-    mutations,
-  );
-  return mutations;
-}
 
 export function collectPulseMutationsAtPaths(
   previousRootValue: unknown,
@@ -35,7 +25,7 @@ export function collectPulseMutationsAtPaths(
   const uniquePaths = new Map<string, PulsePath>();
 
   for (const path of paths) {
-    uniquePaths.set(getInternalPathKey(path), path);
+    uniquePaths.set(getPulsePathKey(path), path);
     collectChangedArrayLengthPaths(
       previousRootValue,
       currentRootValue,
@@ -80,7 +70,7 @@ function collectChangedArrayLengthPaths(
       previousState.value.length !== currentState.value.length
     ) {
       const lengthPath = [...traversedPath, ARRAY_LENGTH_SEGMENT];
-      uniquePaths.set(getInternalPathKey(lengthPath), lengthPath);
+      uniquePaths.set(getPulsePathKey(lengthPath), lengthPath);
     }
 
     traversedPath.push(segment);
@@ -93,35 +83,6 @@ function collectChangedArrayLengthPaths(
       segment,
     );
   }
-}
-
-function getInternalPathKey(path: PulsePath): string {
-  if (path.length === 0) {
-    return "<root>";
-  }
-
-  let key = "";
-
-  for (const segment of path) {
-    if (segment === ARRAY_LENGTH_SEGMENT) {
-      key += "|l";
-      continue;
-    }
-
-    if (typeof segment === "number") {
-      key += `|n:${segment}`;
-      continue;
-    }
-
-    if (typeof segment === "symbol") {
-      key += `|y:${String(segment)}`;
-      continue;
-    }
-
-    key += `|s:${segment}`;
-  }
-
-  return key;
 }
 
 interface ValueStatePathCache {

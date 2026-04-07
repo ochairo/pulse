@@ -1,6 +1,3 @@
-import type { PulsePath } from "../path/index.js";
-import { ARRAY_LENGTH_SEGMENT } from "../path/index.js";
-
 const MISSING = Symbol("pulse.missing");
 
 export type ValueState =
@@ -14,37 +11,6 @@ export const MISSING_VALUE_STATE: ValueState = {
 
 export function canTraversePulseValue(value: unknown): boolean {
   return value === undefined || Array.isArray(value) || isPlainObject(value);
-}
-
-export function readValueAtPath(rootValue: unknown, path: PulsePath): unknown {
-  const valueState = readValueStateAtPath(rootValue, path);
-  return valueState.exists ? valueState.value : undefined;
-}
-
-export function readValueStateAtPath(
-  rootValue: unknown,
-  path: PulsePath,
-): ValueState {
-  let currentState = readExistingValue(rootValue);
-
-  for (const segment of path) {
-    if (!currentState.exists) {
-      return currentState;
-    }
-
-    if (segment === ARRAY_LENGTH_SEGMENT) {
-      if (!Array.isArray(currentState.value)) {
-        return MISSING_VALUE_STATE;
-      }
-
-      currentState = readExistingValue(currentState.value.length);
-      continue;
-    }
-
-    currentState = readChildState(currentState.value, segment);
-  }
-
-  return currentState;
 }
 
 export function readChildState(
@@ -72,7 +38,7 @@ export function readExistingValue(value: unknown): ValueState {
   return { exists: true, value };
 }
 
-export function readOwnValue(
+function readOwnValue(
   objectValue: Record<PropertyKey, unknown>,
   key: PropertyKey,
 ): ValueState {
@@ -81,7 +47,7 @@ export function readOwnValue(
     : MISSING_VALUE_STATE;
 }
 
-export function isObjectLike(value: unknown): value is object {
+function isObjectLike(value: unknown): value is object {
   return value !== null && typeof value === "object";
 }
 

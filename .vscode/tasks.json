@@ -10,6 +10,19 @@
 			],
 			"isBackground": false,
 			"group": "build"
+		},
+		{
+			"label": "generate-benchmark-report",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"--dir",
+				"./benchmarks",
+				"run",
+				"report"
+			],
+			"isBackground": false,
+			"group": "build"
 		}
 	]
 }

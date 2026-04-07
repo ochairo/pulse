@@ -5,7 +5,10 @@
   "scripts": {
     "pulse": "node ./runtime.mjs",
     "compare": "node ./compare.mjs",
-    "report": "node ./report.mjs"
+    "report": "node ./report.mjs --preset=quick",
+    "report:compare": "node ./report.mjs --preset=quick --compare-only",
+    "report:full": "node ./report.mjs --preset=full",
+    "report:pulse": "node ./report.mjs --preset=quick --pulse-only"
   },
   "dependencies": {
     "@legendapp/state": "beta",

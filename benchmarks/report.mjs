@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { runComparisonBenchmarkSuite } from "./compare.mjs";
 import { runPulseBenchmarkSuite } from "./runtime.mjs";
 import { getEnvironment, writeJsonReport, writeTextReport } from "./shared.mjs";
@@ -13,8 +14,17 @@ const SUMMARY_LIBRARY_GROUPS = {
 
 const SUMMARY_LIBRARIES = Object.keys(SUMMARY_LIBRARY_GROUPS);
 
-function formatMilliseconds(value) {
-  return `${value.toFixed(3)} ms/op`;
+function formatNanoseconds(valueMs) {
+  const valueNs = Math.round(valueMs * 1_000_000);
+  return `${valueNs.toLocaleString("en-US")} ns/op`;
+}
+
+function formatPercent(value) {
+  return `${value.toFixed(1)}%`;
+}
+
+function getBenchmarkScore(benchmark) {
+  return benchmark.medianMs ?? benchmark.averageMs;
 }
 
 function parseLibraryName(benchmarkName) {
@@ -72,8 +82,10 @@ function getSummaryLibraryScenarioValues(sectionCases, summaryLibrary) {
     const scenarioName = getBenchmarkScenarioName(benchmark.name);
     const previousBest = scenarioBestTimes.get(scenarioName);
 
-    if (previousBest === undefined || benchmark.averageMs < previousBest) {
-      scenarioBestTimes.set(scenarioName, benchmark.averageMs);
+    const benchmarkScore = getBenchmarkScore(benchmark);
+
+    if (previousBest === undefined || benchmarkScore < previousBest) {
+      scenarioBestTimes.set(scenarioName, benchmarkScore);
     }
   }
 
@@ -85,7 +97,7 @@ function getSummaryLibraryScores(sectionCases, summaryLibrary) {
 
   return {
     library: summaryLibrary,
-    averageMs: geometricMean(values),
+    scoreMs: geometricMean(values),
     scenarioCount: values.length,
   };
 }
@@ -97,13 +109,13 @@ function buildComparisonSummary(comparisonSuite) {
     );
 
     const winner = scores.reduce((best, score) =>
-      score.averageMs < best.averageMs ? score : best,
+      score.scoreMs < best.scoreMs ? score : best,
     );
 
     return {
       title: section.title,
       winner: winner.library,
-      winnerAverageMs: winner.averageMs,
+      winnerScoreMs: winner.scoreMs,
       scenarioCount: Math.max(...scores.map((score) => score.scenarioCount)),
       scores,
     };
@@ -119,15 +131,15 @@ function buildComparisonSummary(comparisonSuite) {
   const equalCategoryScores = SUMMARY_LIBRARIES.map((library) => ({
     library,
     categoryWins: categoryWinsByLibrary[library],
-    averageMs: geometricMean(
+    scoreMs: geometricMean(
       categories.map((category) => {
         const score = category.scores.find(
           (entry) => entry.library === library,
         );
-        return score?.averageMs ?? Number.POSITIVE_INFINITY;
+        return score?.scoreMs ?? Number.POSITIVE_INFINITY;
       }),
     ),
-  })).sort((left, right) => left.averageMs - right.averageMs);
+  })).sort((left, right) => left.scoreMs - right.scoreMs);
 
   const scenarioWeightedScores = SUMMARY_LIBRARIES.map((library) => {
     const values = comparisonSuite.sections.flatMap((section) =>
@@ -137,9 +149,9 @@ function buildComparisonSummary(comparisonSuite) {
     return {
       library,
       categoryWins: categoryWinsByLibrary[library],
-      averageMs: geometricMean(values),
+      scoreMs: geometricMean(values),
     };
-  }).sort((left, right) => left.averageMs - right.averageMs);
+  }).sort((left, right) => left.scoreMs - right.scoreMs);
 
   const mostCategoryWins =
     [...equalCategoryScores].sort((left, right) => {
@@ -147,7 +159,7 @@ function buildComparisonSummary(comparisonSuite) {
         return right.categoryWins - left.categoryWins;
       }
 
-      return left.averageMs - right.averageMs;
+      return left.scoreMs - right.scoreMs;
     })[0]?.library ?? null;
 
   return {
@@ -170,8 +182,8 @@ function buildComparisonSummary(comparisonSuite) {
         );
 
         return (
-          (leftScore?.averageMs ?? Number.POSITIVE_INFINITY) -
-          (rightScore?.averageMs ?? Number.POSITIVE_INFINITY)
+          (leftScore?.scoreMs ?? Number.POSITIVE_INFINITY) -
+          (rightScore?.scoreMs ?? Number.POSITIVE_INFINITY)
         );
       }),
     },
@@ -192,13 +204,13 @@ function renderSuiteSection(section) {
   const lines = [
     `### ${section.title}`,
     "",
-    "| Scenario | Average | Iterations |",
-    "| --- | ---: | ---: |",
+    "| Scenario | Median | Mean | RSD | Samples | Ops/Sample | Base Ops |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
   ];
 
   for (const benchmark of section.cases) {
     lines.push(
-      `| ${benchmark.name} | ${formatMilliseconds(benchmark.averageMs)} | ${benchmark.iterations} |`,
+      `| ${benchmark.name} | ${formatNanoseconds(getBenchmarkScore(benchmark))} | ${formatNanoseconds(benchmark.averageMs)} | ${formatPercent(benchmark.relativeStdDevPct ?? 0)} | ${benchmark.sampleCount ?? 1} | ${benchmark.iterations} | ${benchmark.configuredIterations ?? benchmark.iterations} |`,
     );
   }
 
@@ -212,9 +224,13 @@ function renderComparisonSummary(summary) {
   const lines = [
     "## Comparison Summary",
     "",
-    "Category winners use the lowest average within that category. For multi-scenario categories like Editable Table Costs, the category score is the geometric mean of that library's scenarios in the category.",
+    "Category winners use the lowest median within that category. For multi-scenario categories like Editable Table Costs, the category score is the geometric mean of that library's per-scenario medians.",
     "Store Creation Cost measures wrapping a 100-element user array. Wide Array Item Replace writes the last item in a 10k array to stress immutable container costs at scale.",
-    "Leaf Subscription Write measures subscribe-write-unsubscribe on a specific leaf field. Root Subscription Write does the same at the root level.",
+    "Hot Read Costs keeps store setup outside the timed loop and measures repeated root, deep-leaf, and table-cell reads on reused state.",
+    "General App Cold Update keeps store creation inside the timed task. General App Hot Writes uses one setup per benchmark and measures steady-state updates on the same wrapped store.",
+    "Subscription Lifecycle categories measure attach-detach cost without writes. Subscription Dispatch categories keep listener setup outside the timed loop and measure steady-state writes with an already-subscribed listener.",
+    "Editable Table Subscription Lifecycle measures UI mount-unmount style listener attachment for 50 row listeners and a 20x30 visible window of cell listeners.",
+    "Each case is sampled multiple times. Iteration counts are adaptively calibrated to reach a meaningful sample duration, then tables show median, mean, relative standard deviation, sample count, calibrated ops per sample, and base configured ops.",
     "Pulse uses batching only in scenarios where coordinated multi-write updates are the intended mutation model.",
     "Equal-Category Overall gives each top-level category the same weight.",
     "Scenario-Weighted Overall gives each benchmark row the same weight, so categories with more scenarios contribute more.",
@@ -230,7 +246,7 @@ function renderComparisonSummary(summary) {
     const scoreByLibrary = Object.fromEntries(
       category.scores.map((score) => [
         score.library,
-        formatMilliseconds(score.averageMs),
+        formatNanoseconds(score.scoreMs),
       ]),
     );
 
@@ -265,7 +281,7 @@ function renderComparisonSummary(summary) {
 
   for (const score of summary.overall.equalCategory.scores) {
     lines.push(
-      `| ${score.library} | ${score.categoryWins} | ${formatMilliseconds(score.averageMs)} |`,
+      `| ${score.library} | ${score.categoryWins} | ${formatNanoseconds(score.scoreMs)} |`,
     );
   }
 
@@ -281,7 +297,7 @@ function renderComparisonSummary(summary) {
 
   for (const score of summary.overall.scenarioWeighted.scores) {
     lines.push(
-      `| ${score.library} | ${score.categoryWins} | ${formatMilliseconds(score.averageMs)} |`,
+      `| ${score.library} | ${score.categoryWins} | ${formatNanoseconds(score.scoreMs)} |`,
     );
   }
 
@@ -303,37 +319,102 @@ function renderMarkdownReport(report) {
     `Environment: Node ${report.environment.node} on ${report.environment.platform} ${report.environment.arch}`,
     "",
     "Shared-scenario comparisons are directional, not absolute. `pulse` includes deep proxy traversal and path-aware listener bookkeeping that the baseline libraries model differently.",
+    "Cold scenarios keep state creation inside the timed task. Hot scenarios use `setup` once and measure steady-state reads or writes against an already wrapped store.",
     "Bulk comparison cases use each library's intended mutation model where available: `runInAction` for MobX, `batch` for Legend-State, and direct proxy mutation for Valtio.",
-    "Subtree listener cases are also library-shaped: Pulse and Legend-State use explicit node listeners, Valtio uses subtree proxy subscriptions, and MobX uses tracked reactions for the row or table shape being observed.",
-    "Store creation and wide-array cases isolate initialization and immutable container overhead. Leaf and root subscription cases measure fine-grained vs coarse-grained notification cost.",
-    "",
-    "## Pulse Suite",
-    "",
+    "Subscription cases are library-shaped: Pulse and Legend-State use explicit node listeners, Valtio uses proxy subscriptions, and MobX uses tracked reactions for the row or table shape being observed.",
+    "Store creation and wide-array cases isolate initialization and immutable container overhead. Subscription cases focus on exact-path node listeners.",
+    "Operation timings are rendered in ns/op throughout this report for consistent comparison across fast and slow scenarios.",
   ];
 
-  for (const section of report.pulse.sections) {
-    lines.push(renderSuiteSection(section));
+  if (report.pulse) {
+    lines.push("", "## Pulse Suite", "");
+
+    for (const section of report.pulse.sections) {
+      lines.push(renderSuiteSection(section));
+    }
   }
 
-  lines.push("## Comparison Suite", "");
+  if (report.comparison) {
+    lines.push("## Comparison Suite", "");
 
-  for (const section of report.comparison.sections) {
-    lines.push(renderSuiteSection(section));
+    for (const section of report.comparison.sections) {
+      lines.push(renderSuiteSection(section));
+    }
   }
 
-  lines.push(renderComparisonSummary(report.summary));
+  if (report.summary) {
+    lines.push(renderComparisonSummary(report.summary));
+  }
 
   return `${lines.join("\n")}\n`;
 }
 
-async function main() {
-  const comparison = runComparisonBenchmarkSuite({ quiet: true });
+export function parseReportOptions(argv = process.argv.slice(2)) {
+  const options = {
+    includeComparison: true,
+    includePulse: true,
+    preset: "full",
+  };
+
+  for (const argument of argv) {
+    if (argument === "--compare-only") {
+      options.includePulse = false;
+      continue;
+    }
+
+    if (argument === "--pulse-only") {
+      options.includeComparison = false;
+      continue;
+    }
+
+    if (argument.startsWith("--preset=")) {
+      options.preset = argument.slice("--preset=".length);
+      continue;
+    }
+  }
+
+  return options;
+}
+
+export { renderMarkdownReport };
+
+async function main(argv = process.argv.slice(2)) {
+  const options = parseReportOptions(argv);
+
+  if (!options.includePulse && !options.includeComparison) {
+    throw new TypeError("At least one benchmark suite must be selected.");
+  }
+
+  console.log(
+    `Generating benchmark report (${options.preset} preset): ${describeSelectedSuites(options)}`,
+  );
+
+  let comparison;
+  if (options.includeComparison) {
+    console.log("Running comparison suite...");
+    comparison = runComparisonBenchmarkSuite({
+      preset: options.preset,
+      quiet: true,
+    });
+  }
+
+  let pulse;
+  if (options.includePulse) {
+    console.log("Running pulse suite...");
+    pulse = runPulseBenchmarkSuite({
+      preset: options.preset,
+      quiet: true,
+    });
+  }
+
+  console.log("Rendering report...");
+
   const report = {
     generatedAt: new Date().toISOString(),
     environment: getEnvironment(),
-    pulse: runPulseBenchmarkSuite({ quiet: true }),
-    comparison,
-    summary: buildComparisonSummary(comparison),
+    ...(pulse ? { pulse } : {}),
+    ...(comparison ? { comparison } : {}),
+    ...(comparison ? { summary: buildComparisonSummary(comparison) } : {}),
   };
 
   await writeJsonReport(
@@ -350,4 +431,14 @@ async function main() {
   );
 }
 
-await main();
+function describeSelectedSuites(options) {
+  if (options.includePulse && options.includeComparison) {
+    return "pulse + comparison";
+  }
+
+  return options.includePulse ? "pulse only" : "comparison only";
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await main();
+}

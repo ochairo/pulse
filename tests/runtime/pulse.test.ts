@@ -25,27 +25,37 @@ describe("pulse", () => {
     expect(state.get()).toEqual({ user: { name: "Grace", role: "admin" } });
   });
 
-  it("notifies ancestor listeners with descendant mutation paths", () => {
+  it("writes through a cached nested node after sibling writes without losing newer parent state", () => {
+    const state = pulse({ user: { name: "Ada", age: 30 } });
+    const name = state.user.name;
+
+    state.user.age.set(31);
+    name.set("Grace");
+
+    expect(state.get()).toEqual({ user: { name: "Grace", age: 31 } });
+  });
+
+  it("does not notify exact ancestor listeners for descendant mutations", () => {
     const state = pulse({ user: { name: "Ada", role: "admin" } });
     const listener = vi.fn();
 
     state.on(listener);
     state.user.name.set("Grace");
 
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith({
-      currentValue: { user: { name: "Grace", role: "admin" } },
-      previousValue: { user: { name: "Ada", role: "admin" } },
-      changes: [
-        {
-          kind: "replace",
-          path: ["user", "name"],
-          key: "name",
-          value: "Grace",
-          previousValue: "Ada",
-        },
-      ],
-    });
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("does not notify exact ancestor listeners for descendant-only leaf changes", () => {
+    const state = pulse({ user: { name: "Ada", role: "admin" } });
+    const nameListener = vi.fn();
+    const userListener = vi.fn();
+
+    state.user.name.on(nameListener);
+    state.user.on(userListener);
+    state.user.name.set("Grace");
+
+    expect(nameListener).toHaveBeenCalledTimes(1);
+    expect(userListener).not.toHaveBeenCalled();
   });
 
   it("does not notify descendants when an ancestor replacement keeps their leaf value", () => {
@@ -72,6 +82,49 @@ describe("pulse", () => {
         },
       ],
     });
+  });
+
+  it("notifies only the changed exact descendants when an ancestor replacement changes multiple child values", () => {
+    const state = pulse({ user: { name: "Ada", role: "admin", age: 30 } });
+    const nameListener = vi.fn();
+    const roleListener = vi.fn();
+    const ageListener = vi.fn();
+
+    state.user.name.on(nameListener);
+    state.user.role.on(roleListener);
+    state.user.age.on(ageListener);
+
+    state.user.set({ name: "Grace", role: "editor", age: 30 });
+
+    expect(nameListener).toHaveBeenCalledTimes(1);
+    expect(nameListener).toHaveBeenCalledWith({
+      currentValue: "Grace",
+      previousValue: "Ada",
+      changes: [
+        {
+          kind: "replace",
+          path: ["user", "name"],
+          key: "name",
+          value: "Grace",
+          previousValue: "Ada",
+        },
+      ],
+    });
+    expect(roleListener).toHaveBeenCalledTimes(1);
+    expect(roleListener).toHaveBeenCalledWith({
+      currentValue: "editor",
+      previousValue: "admin",
+      changes: [
+        {
+          kind: "replace",
+          path: ["user", "role"],
+          key: "role",
+          value: "editor",
+          previousValue: "admin",
+        },
+      ],
+    });
+    expect(ageListener).not.toHaveBeenCalled();
   });
 
   it("notifies descendants when a missing ancestor branch becomes defined", () => {
@@ -208,39 +261,14 @@ describe("pulse", () => {
     });
   });
 
-  it("reports both index deletions and length replacement to array ancestors", () => {
+  it("does not notify exact array listeners for descendant mutations", () => {
     const rows = pulse(["Ada", "Grace", "Lin"]);
     const listener = vi.fn();
 
     rows.on(listener);
     rows.length.set(1);
 
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith({
-      currentValue: ["Ada"],
-      previousValue: ["Ada", "Grace", "Lin"],
-      changes: [
-        {
-          kind: "delete",
-          path: [1],
-          key: 1,
-          previousValue: "Grace",
-        },
-        {
-          kind: "delete",
-          path: [2],
-          key: 2,
-          previousValue: "Lin",
-        },
-        {
-          kind: "replace",
-          path: ["length"],
-          key: "length",
-          value: 1,
-          previousValue: 3,
-        },
-      ],
-    });
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it("uses snapshot listener semantics during dispatch", () => {
@@ -289,17 +317,17 @@ describe("pulse", () => {
     expect(count.get()).toBe(1);
   });
 
-  it("continues notifying later nodes after an earlier node listener throws", () => {
+  it("continues notifying later exact nodes after an earlier exact node listener throws", () => {
     const state = pulse({ user: { name: "Ada" } });
-    const listenerError = new Error("root listener failed");
+    const listenerError = new Error("user listener failed");
     const leafListener = vi.fn();
 
-    state.on(() => {
+    state.user.on(() => {
       throw listenerError;
     });
     state.user.name.on(leafListener);
 
-    expect(() => state.user.name.set("Grace")).toThrow(listenerError);
+    expect(() => state.user.set({ name: "Grace" })).toThrow(listenerError);
     expect(leafListener).toHaveBeenCalledTimes(1);
     expect(state.user.name.get()).toBe("Grace");
   });
@@ -332,40 +360,19 @@ describe("pulse", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
-  it("batches multiple writes into one root notification", () => {
+  it("batches multiple writes into one exact leaf notification per node", () => {
     const state = pulse({ user: { name: "Ada", age: 30 } });
-    const rootListener = vi.fn();
     const nameListener = vi.fn();
+    const ageListener = vi.fn();
 
-    state.on(rootListener);
     state.user.name.on(nameListener);
+    state.user.age.on(ageListener);
 
     state.batch(() => {
       state.user.name.set("Grace");
       state.user.age.set(31);
     });
 
-    expect(rootListener).toHaveBeenCalledTimes(1);
-    expect(rootListener).toHaveBeenCalledWith({
-      currentValue: { user: { name: "Grace", age: 31 } },
-      previousValue: { user: { name: "Ada", age: 30 } },
-      changes: [
-        {
-          kind: "replace",
-          path: ["user", "name"],
-          key: "name",
-          value: "Grace",
-          previousValue: "Ada",
-        },
-        {
-          kind: "replace",
-          path: ["user", "age"],
-          key: "age",
-          value: 31,
-          previousValue: 30,
-        },
-      ],
-    });
     expect(nameListener).toHaveBeenCalledTimes(1);
     expect(nameListener).toHaveBeenCalledWith({
       currentValue: "Grace",
@@ -380,13 +387,54 @@ describe("pulse", () => {
         },
       ],
     });
+    expect(ageListener).toHaveBeenCalledTimes(1);
+    expect(ageListener).toHaveBeenCalledWith({
+      currentValue: 31,
+      previousValue: 30,
+      changes: [
+        {
+          kind: "replace",
+          path: ["user", "age"],
+          key: "age",
+          value: 31,
+          previousValue: 30,
+        },
+      ],
+    });
+  });
+
+  it("keeps the first previous value and latest current value for repeated exact writes in a batch", () => {
+    const state = pulse({ user: { name: "Ada" } });
+    const listener = vi.fn();
+
+    state.user.name.on(listener);
+
+    state.batch(() => {
+      state.user.name.set("Grace");
+      state.user.name.set("Lin");
+    });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({
+      currentValue: "Lin",
+      previousValue: "Ada",
+      changes: [
+        {
+          kind: "replace",
+          path: ["user", "name"],
+          key: "name",
+          value: "Lin",
+          previousValue: "Ada",
+        },
+      ],
+    });
   });
 
   it("defers listener dispatch until the batch completes", () => {
     const state = pulse({ user: { name: "Ada", age: 30 } });
     const listener = vi.fn();
 
-    state.on(listener);
+    state.user.name.on(listener);
 
     state.batch(() => {
       state.user.name.set("Grace");
@@ -400,9 +448,11 @@ describe("pulse", () => {
 
   it("collapses nested batches into a single flush", () => {
     const state = pulse({ count: 0, total: 0 });
-    const listener = vi.fn();
+    const countListener = vi.fn();
+    const totalListener = vi.fn();
 
-    state.on(listener);
+    state.count.on(countListener);
+    state.total.on(totalListener);
 
     state.batch(() => {
       state.count.set(1);
@@ -412,10 +462,10 @@ describe("pulse", () => {
       });
     });
 
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith({
-      currentValue: { count: 1, total: 2 },
-      previousValue: { count: 0, total: 0 },
+    expect(countListener).toHaveBeenCalledTimes(1);
+    expect(countListener).toHaveBeenCalledWith({
+      currentValue: 1,
+      previousValue: 0,
       changes: [
         {
           kind: "replace",
@@ -424,6 +474,13 @@ describe("pulse", () => {
           value: 1,
           previousValue: 0,
         },
+      ],
+    });
+    expect(totalListener).toHaveBeenCalledTimes(1);
+    expect(totalListener).toHaveBeenCalledWith({
+      currentValue: 2,
+      previousValue: 0,
+      changes: [
         {
           kind: "replace",
           path: ["total"],
@@ -451,7 +508,7 @@ describe("pulse", () => {
     const listener = vi.fn();
     const callbackError = new Error("callback failed");
 
-    state.on(listener);
+    state.count.on(listener);
 
     expect(() =>
       state.batch(() => {
@@ -477,7 +534,7 @@ describe("pulse", () => {
     const settings = pulse({ theme: "light" });
     const settingsListener = vi.fn();
 
-    settings.on(settingsListener);
+    settings.theme.on(settingsListener);
 
     users.batch(() => {
       settings.theme.set("dark");
@@ -691,76 +748,122 @@ describe("pulse", () => {
     expect(isPulse({ get() {}, set() {}, on() {} })).toBe(false);
   });
 
-  it("filters array listeners by prop key", () => {
-    const users = pulse([
-      { name: "Ada", age: 30 },
-      { name: "Paul", age: 25 },
-    ]);
-    const nameListener = vi.fn();
-    const allListener = vi.fn();
-
-    users.prop("name").on(nameListener);
-    users.on(allListener);
-
-    users[0]?.set({ name: "Grace", age: 30 });
-
-    expect(nameListener).toHaveBeenCalledTimes(1);
-    expect(allListener).toHaveBeenCalledTimes(1);
-
-    expect(nameListener.mock.calls[0]?.[0].changes).toEqual(
-      expect.arrayContaining([expect.objectContaining({ key: "name" })]),
-    );
-  });
-
-  it("does not call prop key-filtered listener when key does not match", () => {
-    const users = pulse([
-      { name: "Ada", age: 30 },
-      { name: "Paul", age: 25 },
-    ]);
+  it("supports exact prop subscriptions on object branches", () => {
+    const state = pulse({
+      japan: {
+        users: {
+          basic: { name: "Ada" },
+          premium: { name: "Paul" },
+        },
+      },
+    });
     const nameListener = vi.fn();
 
-    users.prop("name").on(nameListener);
+    state.japan.users.basic.prop("name").on(nameListener);
 
-    users[0]?.age.set(31);
+    state.japan.users.premium.name.set("Grace");
 
     expect(nameListener).not.toHaveBeenCalled();
-  });
 
-  it("supports prop key filter in batch mode", () => {
-    const state = pulse({
-      users: [
-        { name: "Ada", age: 30 },
-        { name: "Paul", age: 25 },
-      ],
-    });
-    const nameListener = vi.fn();
-    const ageListener = vi.fn();
-
-    state.users.prop("name").on(nameListener);
-    state.users.prop("age").on(ageListener);
-
-    state.batch(() => {
-      state.users[0]?.name.set("Grace");
-      state.users[1]?.age.set(26);
-    });
+    state.japan.users.basic.name.set("Lin");
 
     expect(nameListener).toHaveBeenCalledTimes(1);
-    expect(ageListener).toHaveBeenCalledTimes(1);
   });
 
-  it("unsubscribes prop key-filtered listeners correctly", () => {
+  it("supports exact prop subscriptions on indexed item branches", () => {
+    const state = pulse({
+      japan: {
+        users: [{ name: "Ada" }, { name: "Paul" }],
+      },
+    });
+    const nameListener = vi.fn();
+    const firstUser = state.japan.users[0] as unknown as {
+      prop(key: "name"): { on(callback: (event: unknown) => void): () => void };
+      name: { set(nextValue: string): void };
+    };
+    const secondUser = state.japan.users[1] as unknown as {
+      name: { set(nextValue: string): void };
+    };
+
+    firstUser.prop("name").on(nameListener);
+
+    secondUser.name.set("Grace");
+
+    expect(nameListener).not.toHaveBeenCalled();
+
+    firstUser.name.set("Lin");
+
+    expect(nameListener).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not expose non-exact prop subscriptions on arrays", () => {
+    const users = pulse([
+      { name: "Ada", age: 30 },
+      { name: "Paul", age: 25 },
+    ]) as unknown as { prop(key: PropertyKey): unknown };
+
+    expect(users.prop("name")).toBeUndefined();
+    expect(users.prop(Symbol("name"))).toBeUndefined();
+  });
+
+  it("keeps distinct symbol-key branches separate in listener-aware batches", () => {
+    const left = Symbol("branch");
+    const right = Symbol("branch");
+    const state = pulse({
+      [left]: { value: 1 },
+      [right]: { value: 2 },
+    });
+
+    state.on(() => {});
+
+    state.batch(() => {
+      state.prop(left).value.set(10);
+      state.prop(right).value.set(20);
+    });
+
+    expect(state.prop(left).get()).toEqual({ value: 10 });
+    expect(state.prop(right).get()).toEqual({ value: 20 });
+  });
+
+  it("keeps string keys separate from array-style draft-cache paths in listener-aware batches", () => {
+    const state = pulse({
+      "a|n:1": { value: 1 },
+      a: [0, { value: 2 }],
+    });
+    const secondItem = state.a[1] as unknown as {
+      value: { set(nextValue: number): void };
+    };
+
+    state.on(() => {});
+
+    state.batch(() => {
+      state.prop("a|n:1").value.set(10);
+      secondItem.value.set(20);
+    });
+
+    expect(state.prop("a|n:1").get()).toEqual({ value: 10 });
+    expect(state.get().a[1]).toEqual({ value: 20 });
+  });
+
+  it("unsubscribes exact prop listeners correctly", () => {
     const users = pulse([{ name: "Ada", age: 30 }]);
     const nameListener = vi.fn();
+    const firstUser = users.prop(0) as unknown as {
+      name: {
+        on(callback: (event: unknown) => void): () => void;
+        set(nextValue: string): void;
+      };
+    };
 
-    const unsubscribe = users.prop("name").on(nameListener);
+    const unsubscribe = firstUser.name.on(nameListener);
 
-    users[0]?.name.set("Grace");
+    firstUser.name.set("Grace");
 
     expect(nameListener).toHaveBeenCalledTimes(1);
 
     unsubscribe();
 
-    users[0]?.name.set("Eve");
+    firstUser.name.set("Eve");
 
     expect(nameListener).toHaveBeenCalledTimes(1);
   });

@@ -12,21 +12,26 @@ import {
   type ValueState,
 } from "./state.js";
 
-export interface PulseWriteResult {
+interface PulseWriteResult {
   readonly rootValue: unknown;
   readonly mutations: readonly PulseMutation[];
 }
 
-export interface PulseWriteRootResult {
+interface PulseWriteRootResult {
   readonly changed: boolean;
   readonly rootValue: unknown;
 }
 
 export interface PulseBatchWriteState {
-  clonedContainers: Map<string, Record<PropertyKey, unknown> | unknown[]>;
   canAccumulateMutations: boolean;
   pendingMutations: Map<PulsePath, PulseMutation>;
   rootValue: unknown;
+  version: number;
+}
+
+interface PulseWriteAncestorStep {
+  readonly childKey: PropertyKey;
+  readonly currentValue: unknown;
 }
 
 interface WriteStepResult {
@@ -35,33 +40,17 @@ interface WriteStepResult {
   readonly mutations: readonly PulseMutation[];
 }
 
+interface ExistingLeafWriteContext {
+  readonly ancestors: PulseWriteAncestorStep[];
+  readonly leafKey: PropertyKey;
+  readonly previousLeafValue: unknown;
+}
+
 export function setValueAtPath(
   rootValue: unknown,
   path: PulsePath,
   nextValue: unknown,
 ): PulseWriteResult {
-  const singleSegmentFastResult = trySetSingleSegmentLeafValueAtPath(
-    rootValue,
-    path,
-    nextValue,
-    true,
-  );
-
-  if (singleSegmentFastResult) {
-    return singleSegmentFastResult;
-  }
-
-  const twoSegmentFastResult = trySetTwoSegmentLeafValueAtPath(
-    rootValue,
-    path,
-    nextValue,
-    true,
-  );
-
-  if (twoSegmentFastResult) {
-    return twoSegmentFastResult;
-  }
-
   const fastResult = trySetExistingLeafValueAtPath(
     rootValue,
     path,
@@ -77,8 +66,8 @@ export function setValueAtPath(
     readExistingValue(rootValue),
     path,
     nextValue,
-    [],
     true,
+    [],
   );
 
   return result.changed
@@ -91,34 +80,6 @@ export function setValueAtPathWithoutMutations(
   path: PulsePath,
   nextValue: unknown,
 ): PulseWriteRootResult {
-  const singleSegmentFastResult = trySetSingleSegmentLeafValueAtPath(
-    rootValue,
-    path,
-    nextValue,
-    false,
-  );
-
-  if (singleSegmentFastResult) {
-    return {
-      changed: true,
-      rootValue: singleSegmentFastResult.rootValue,
-    };
-  }
-
-  const twoSegmentFastResult = trySetTwoSegmentLeafValueAtPath(
-    rootValue,
-    path,
-    nextValue,
-    false,
-  );
-
-  if (twoSegmentFastResult) {
-    return {
-      changed: true,
-      rootValue: twoSegmentFastResult.rootValue,
-    };
-  }
-
   const fastResult = trySetExistingLeafValueAtPath(
     rootValue,
     path,
@@ -137,8 +98,8 @@ export function setValueAtPathWithoutMutations(
     readExistingValue(rootValue),
     path,
     nextValue,
-    [],
     false,
+    [],
   );
 
   return result.changed
@@ -148,158 +109,18 @@ export function setValueAtPathWithoutMutations(
 
 export function createPulseBatchWriteState(
   rootValue: unknown,
+  version: number,
+  canAccumulateMutations = true,
 ): PulseBatchWriteState {
   return {
-    canAccumulateMutations: true,
-    clonedContainers: new Map(),
+    canAccumulateMutations,
     pendingMutations: new Map(),
     rootValue,
-  };
-}
-
-export function setValueAtPathInBatch(
-  rootValue: unknown,
-  path: PulsePath,
-  nextValue: unknown,
-  batchState: PulseBatchWriteState,
-): PulseWriteRootResult {
-  const draftResult = trySetValueAtPathWithDraftCache(
-    rootValue,
-    path,
-    nextValue,
-    batchState,
-  );
-
-  if (draftResult) {
-    return draftResult;
-  }
-
-  const fallbackResult = setValueAtPathWithoutMutations(
-    rootValue,
-    path,
-    nextValue,
-  );
-
-  if (!fallbackResult.changed) {
-    return fallbackResult;
-  }
-
-  batchState.canAccumulateMutations = false;
-  batchState.clonedContainers.clear();
-  batchState.pendingMutations.clear();
-  batchState.rootValue = fallbackResult.rootValue;
-  return fallbackResult;
-}
-
-function trySetValueAtPathWithDraftCache(
-  rootValue: unknown,
-  path: PulsePath,
-  nextValue: unknown,
-  batchState: PulseBatchWriteState,
-): PulseWriteRootResult | null {
-  if (path.length === 0 || path.includes(ARRAY_LENGTH_SEGMENT)) {
-    return null;
-  }
-
-  const rootContainer = getOrCreateDraftContainer(rootValue, "", batchState);
-
-  if (!rootContainer) {
-    return null;
-  }
-
-  let currentContainer = rootContainer;
-  let prefixKey = "";
-
-  for (let index = 0; index < path.length - 1; index += 1) {
-    const segment = path[index] as PropertyKey;
-    prefixKey = appendDraftKey(prefixKey, segment);
-    const nextContainer = getOrCreateDraftChildContainer(
-      currentContainer,
-      segment,
-      prefixKey,
-      batchState,
-    );
-
-    if (!nextContainer) {
-      return null;
-    }
-
-    currentContainer = nextContainer;
-  }
-
-  const leafKey = path[path.length - 1] as PropertyKey;
-  const previousLeafValue = readExistingChildValue(currentContainer, leafKey);
-
-  if (previousLeafValue === MISSING_CHILD_VALUE) {
-    return null;
-  }
-
-  if (Object.is(previousLeafValue, nextValue)) {
-    return {
-      changed: false,
-      rootValue: batchState.rootValue,
-    };
-  }
-
-  recordBatchReplaceMutation(batchState, path, previousLeafValue, nextValue);
-  writeChildValue(currentContainer, leafKey, nextValue);
-
-  return {
-    changed: true,
-    rootValue: batchState.rootValue,
+    version,
   };
 }
 
 const MISSING_CHILD_VALUE = Symbol("pulse.missing-child-value");
-
-function getOrCreateDraftContainer(
-  currentValue: unknown,
-  cacheKey: string,
-  batchState: PulseBatchWriteState,
-): (Record<PropertyKey, unknown> | unknown[]) | null {
-  const cachedContainer = batchState.clonedContainers.get(cacheKey);
-
-  if (cachedContainer) {
-    return cachedContainer;
-  }
-
-  if (!Array.isArray(currentValue) && !isPlainObject(currentValue)) {
-    return null;
-  }
-
-  const clonedContainer = cloneExistingWritableContainer(currentValue);
-  batchState.clonedContainers.set(cacheKey, clonedContainer);
-  batchState.rootValue = clonedContainer;
-  return clonedContainer;
-}
-
-function getOrCreateDraftChildContainer(
-  parentContainer: Record<PropertyKey, unknown> | unknown[],
-  segment: PropertyKey,
-  cacheKey: string,
-  batchState: PulseBatchWriteState,
-): (Record<PropertyKey, unknown> | unknown[]) | null {
-  const cachedContainer = batchState.clonedContainers.get(cacheKey);
-
-  if (cachedContainer) {
-    return cachedContainer;
-  }
-
-  const childValue = readExistingChildValue(parentContainer, segment);
-
-  if (childValue === MISSING_CHILD_VALUE) {
-    return null;
-  }
-
-  if (!Array.isArray(childValue) && !isPlainObject(childValue)) {
-    return null;
-  }
-
-  const clonedContainer = cloneExistingWritableContainer(childValue);
-  writeChildValue(parentContainer, segment, clonedContainer);
-  batchState.clonedContainers.set(cacheKey, clonedContainer);
-  return clonedContainer;
-}
 
 function cloneExistingWritableContainer(
   currentValue: Record<PropertyKey, unknown> | unknown[],
@@ -309,8 +130,121 @@ function cloneExistingWritableContainer(
     : { ...currentValue };
 }
 
-function readExistingChildValue(
-  currentValue: Record<PropertyKey, unknown> | unknown[],
+function trySetExistingLeafValueAtPath(
+  rootValue: unknown,
+  path: PulsePath,
+  nextValue: unknown,
+  shouldCollectMutations: boolean,
+): PulseWriteResult | null {
+  const writeContext = createExistingLeafWriteContext(rootValue, path);
+
+  if (!writeContext) {
+    return null;
+  }
+
+  const { ancestors, leafKey, previousLeafValue } = writeContext;
+
+  if (Object.is(previousLeafValue, nextValue)) {
+    return {
+      rootValue,
+      mutations: [],
+    };
+  }
+
+  if (canTraverseAsStructuredValue(previousLeafValue, nextValue)) {
+    return null;
+  }
+
+  const nextRootValue = rebuildValueFromAncestorChain(ancestors, nextValue);
+
+  return {
+    rootValue: nextRootValue,
+    mutations: shouldCollectMutations
+      ? [
+          {
+            kind: "replace",
+            path,
+            key: leafKey,
+            value: nextValue,
+            previousValue: previousLeafValue,
+          },
+        ]
+      : [],
+  };
+}
+
+function createExistingLeafWriteContext(
+  rootValue: unknown,
+  path: PulsePath,
+): ExistingLeafWriteContext | null {
+  if (path.length === 0) {
+    return null;
+  }
+
+  const leafSegment = path[path.length - 1] as PropertyKey;
+
+  if (leafSegment === ARRAY_LENGTH_SEGMENT) {
+    return null;
+  }
+
+  const ancestors: PulseWriteAncestorStep[] = [];
+  let currentValue = rootValue;
+  for (let index = 0; index < path.length; index += 1) {
+    const segment = path[index] as PropertyKey;
+
+    if (segment === ARRAY_LENGTH_SEGMENT) {
+      return null;
+    }
+
+    ancestors.push({
+      childKey: segment,
+      currentValue,
+    });
+
+    if (index === path.length - 1) {
+      break;
+    }
+
+    const container = readExistingStructuredContainer(currentValue, segment);
+
+    if (!container) {
+      return null;
+    }
+
+    currentValue = container;
+  }
+
+  const previousLeafValue = readExistingLeafValue(currentValue, leafSegment);
+
+  if (previousLeafValue === MISSING_CHILD_VALUE) {
+    return null;
+  }
+
+  return {
+    ancestors,
+    leafKey: leafSegment,
+    previousLeafValue,
+  };
+}
+
+function readExistingStructuredContainer(
+  currentValue: unknown,
+  segment: PropertyKey,
+): (Record<PropertyKey, unknown> | unknown[]) | null {
+  const childValue = readExistingLeafValue(currentValue, segment);
+
+  if (
+    childValue === MISSING_CHILD_VALUE ||
+    (!Array.isArray(childValue) && !isPlainObject(childValue))
+  ) {
+    return null;
+  }
+
+  return childValue;
+}
+
+function readExistingLeafValue(
+  currentValue: unknown,
   segment: PropertyKey,
 ): unknown {
   if (Array.isArray(currentValue)) {
@@ -325,6 +259,10 @@ function readExistingChildValue(
     return currentValue[segment];
   }
 
+  if (!isPlainObject(currentValue)) {
+    return MISSING_CHILD_VALUE;
+  }
+
   if (!Object.prototype.hasOwnProperty.call(currentValue, segment)) {
     return MISSING_CHILD_VALUE;
   }
@@ -332,472 +270,42 @@ function readExistingChildValue(
   return currentValue[segment];
 }
 
-function appendDraftKey(prefixKey: string, segment: PropertyKey): string {
-  if (typeof segment === "number") {
-    return `${prefixKey}|n:${segment}`;
-  }
-
-  if (typeof segment === "symbol") {
-    return `${prefixKey}|y:${String(segment)}`;
-  }
-
-  return `${prefixKey}|s:${segment}`;
-}
-
-function recordBatchReplaceMutation(
-  batchState: PulseBatchWriteState,
-  path: PulsePath,
-  previousValue: unknown,
-  nextValue: unknown,
-): void {
-  if (!batchState.canAccumulateMutations) {
-    return;
-  }
-
-  const existingMutation = batchState.pendingMutations.get(path);
-
-  if (existingMutation) {
-    if (Object.is(existingMutation.previousValue, nextValue)) {
-      batchState.pendingMutations.delete(path);
-      return;
-    }
-
-    batchState.pendingMutations.set(path, {
-      kind: "replace",
-      path,
-      key: path[path.length - 1],
-      value: nextValue,
-      previousValue: existingMutation.previousValue,
-    });
-    return;
-  }
-
-  batchState.pendingMutations.set(path, {
-    kind: "replace",
-    path,
-    key: path[path.length - 1],
-    value: nextValue,
-    previousValue,
-  });
-}
-
-function trySetSingleSegmentLeafValueAtPath(
-  rootValue: unknown,
-  path: PulsePath,
-  nextValue: unknown,
-  shouldCollectMutations: boolean,
-): PulseWriteResult | null {
-  if (path.length !== 1) {
-    return null;
-  }
-
-  const leafSegment = path[0] as PropertyKey;
-
-  if (leafSegment === ARRAY_LENGTH_SEGMENT) {
-    return null;
-  }
-
-  if (Array.isArray(rootValue)) {
-    if (
-      typeof leafSegment !== "number" ||
-      leafSegment < 0 ||
-      leafSegment >= rootValue.length
-    ) {
-      return null;
-    }
-
-    const previousLeafValue = rootValue[leafSegment];
-
-    if (Object.is(previousLeafValue, nextValue)) {
-      return {
-        rootValue,
-        mutations: [],
-      };
-    }
-
-    if (canTraverseAsStructuredValue(previousLeafValue, nextValue)) {
-      return null;
-    }
-
-    const nextRootValue = rootValue.slice();
-    nextRootValue[leafSegment] = nextValue;
-
-    return {
-      rootValue: nextRootValue,
-      mutations: shouldCollectMutations
-        ? [
-            {
-              kind: "replace",
-              path,
-              key: leafSegment,
-              value: nextValue,
-              previousValue: previousLeafValue,
-            },
-          ]
-        : [],
-    };
-  }
-
-  if (!isPlainObject(rootValue)) {
-    return null;
-  }
-
-  if (!Object.prototype.hasOwnProperty.call(rootValue, leafSegment)) {
-    return null;
-  }
-
-  const previousLeafValue = rootValue[leafSegment];
-
-  if (Object.is(previousLeafValue, nextValue)) {
-    return {
-      rootValue,
-      mutations: [],
-    };
-  }
-
-  if (canTraverseAsStructuredValue(previousLeafValue, nextValue)) {
-    return null;
-  }
-
-  const nextRootValue = {
-    ...rootValue,
-    [leafSegment]: nextValue,
-  };
-
-  return {
-    rootValue: nextRootValue,
-    mutations: shouldCollectMutations
-      ? [
-          {
-            kind: "replace",
-            path,
-            key: leafSegment,
-            value: nextValue,
-            previousValue: previousLeafValue,
-          },
-        ]
-      : [],
-  };
-}
-
-function trySetTwoSegmentLeafValueAtPath(
-  rootValue: unknown,
-  path: PulsePath,
-  nextValue: unknown,
-  shouldCollectMutations: boolean,
-): PulseWriteResult | null {
-  if (path.length !== 2) {
-    return null;
-  }
-
-  const firstSegment = path[0] as PropertyKey;
-  const leafSegment = path[1] as PropertyKey;
-
-  if (
-    firstSegment === ARRAY_LENGTH_SEGMENT ||
-    leafSegment === ARRAY_LENGTH_SEGMENT
-  ) {
-    return null;
-  }
-
-  let parentValue: unknown;
-  let nextRootValue: unknown;
-
-  if (Array.isArray(rootValue)) {
-    if (
-      typeof firstSegment !== "number" ||
-      firstSegment < 0 ||
-      firstSegment >= rootValue.length
-    ) {
-      return null;
-    }
-
-    parentValue = rootValue[firstSegment];
-
-    const nextParentValue = replaceExistingLeafOnContainer(
-      parentValue,
-      leafSegment,
-      nextValue,
-    );
-
-    if (!nextParentValue) {
-      return null;
-    }
-
-    const nextRootArray = rootValue.slice();
-    nextRootArray[firstSegment] = nextParentValue.nextContainerValue;
-    nextRootValue = nextRootArray;
-
-    return {
-      rootValue: nextRootValue,
-      mutations: shouldCollectMutations
-        ? [
-            {
-              kind: "replace",
-              path,
-              key: leafSegment,
-              value: nextValue,
-              previousValue: nextParentValue.previousLeafValue,
-            },
-          ]
-        : [],
-    };
-  }
-
-  if (!isPlainObject(rootValue)) {
-    return null;
-  }
-
-  if (!Object.prototype.hasOwnProperty.call(rootValue, firstSegment)) {
-    return null;
-  }
-
-  parentValue = rootValue[firstSegment];
-
-  const nextParentValue = replaceExistingLeafOnContainer(
-    parentValue,
-    leafSegment,
-    nextValue,
-  );
-
-  if (!nextParentValue) {
-    return null;
-  }
-
-  nextRootValue = {
-    ...rootValue,
-    [firstSegment]: nextParentValue.nextContainerValue,
-  };
-
-  return {
-    rootValue: nextRootValue,
-    mutations: shouldCollectMutations
-      ? [
-          {
-            kind: "replace",
-            path,
-            key: leafSegment,
-            value: nextValue,
-            previousValue: nextParentValue.previousLeafValue,
-          },
-        ]
-      : [],
-  };
-}
-
-function replaceExistingLeafOnContainer(
-  containerValue: unknown,
-  leafSegment: PropertyKey,
-  nextValue: unknown,
-): {
-  nextContainerValue: unknown;
-  previousLeafValue: unknown;
-} | null {
-  if (Array.isArray(containerValue)) {
-    if (
-      typeof leafSegment !== "number" ||
-      leafSegment < 0 ||
-      leafSegment >= containerValue.length
-    ) {
-      return null;
-    }
-
-    const previousLeafValue = containerValue[leafSegment];
-
-    if (Object.is(previousLeafValue, nextValue)) {
-      return {
-        nextContainerValue: containerValue,
-        previousLeafValue,
-      };
-    }
-
-    if (canTraverseAsStructuredValue(previousLeafValue, nextValue)) {
-      return null;
-    }
-
-    const nextContainerValue = containerValue.slice();
-    nextContainerValue[leafSegment] = nextValue;
-
-    return {
-      nextContainerValue,
-      previousLeafValue,
-    };
-  }
-
-  if (!isPlainObject(containerValue)) {
-    return null;
-  }
-
-  if (!Object.prototype.hasOwnProperty.call(containerValue, leafSegment)) {
-    return null;
-  }
-
-  const previousLeafValue = containerValue[leafSegment];
-
-  if (Object.is(previousLeafValue, nextValue)) {
-    return {
-      nextContainerValue: containerValue,
-      previousLeafValue,
-    };
-  }
-
-  if (canTraverseAsStructuredValue(previousLeafValue, nextValue)) {
-    return null;
-  }
-
-  return {
-    nextContainerValue: {
-      ...containerValue,
-      [leafSegment]: nextValue,
-    },
-    previousLeafValue,
-  };
-}
-
-function trySetExistingLeafValueAtPath(
-  rootValue: unknown,
-  path: PulsePath,
-  nextValue: unknown,
-  shouldCollectMutations: boolean,
-): PulseWriteResult | null {
-  if (path.length === 0 || path.includes(ARRAY_LENGTH_SEGMENT)) {
-    return null;
-  }
-
-  const containers: Array<Record<PropertyKey, unknown> | unknown[]> = [];
-  const segments: PropertyKey[] = [];
-  let currentValue = rootValue;
-
-  for (let index = 0; index < path.length - 1; index += 1) {
-    const segment = path[index] as PropertyKey;
-
-    if (Array.isArray(currentValue)) {
-      if (
-        typeof segment !== "number" ||
-        segment < 0 ||
-        segment >= currentValue.length
-      ) {
-        return null;
-      }
-
-      containers.push(currentValue);
-      segments.push(segment);
-      currentValue = currentValue[segment];
-      continue;
-    }
-
-    if (!isPlainObject(currentValue)) {
-      return null;
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(currentValue, segment)) {
-      return null;
-    }
-
-    containers.push(currentValue);
-    segments.push(segment);
-    currentValue = currentValue[segment];
-  }
-
-  const leafSegment = path[path.length - 1] as PropertyKey;
-  let previousLeafValue: unknown;
-
-  if (Array.isArray(currentValue)) {
-    if (
-      typeof leafSegment !== "number" ||
-      leafSegment < 0 ||
-      leafSegment >= currentValue.length
-    ) {
-      return null;
-    }
-
-    previousLeafValue = currentValue[leafSegment];
-  } else {
-    if (!isPlainObject(currentValue)) {
-      return null;
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(currentValue, leafSegment)) {
-      return null;
-    }
-
-    previousLeafValue = currentValue[leafSegment];
-  }
-
-  if (Object.is(previousLeafValue, nextValue)) {
-    return {
-      rootValue,
-      mutations: [],
-    };
-  }
-
-  if (canTraverseAsStructuredValue(previousLeafValue, nextValue)) {
-    return null;
-  }
-
-  let nextChildValue = nextValue;
-  let nextRootValue: unknown;
-
-  if (Array.isArray(currentValue)) {
-    const nextContainer = currentValue.slice();
-    nextContainer[leafSegment as number] = nextChildValue;
-    nextChildValue = nextContainer;
-  } else {
-    nextChildValue = {
-      ...currentValue,
-      [leafSegment]: nextChildValue,
-    };
-  }
-
-  if (containers.length === 0) {
-    nextRootValue = nextChildValue;
-  } else {
-    nextRootValue = rebuildRootValue(containers, segments, nextChildValue);
-  }
-
-  return {
-    rootValue: nextRootValue,
-    mutations: shouldCollectMutations
-      ? [
-          {
-            kind: "replace",
-            path,
-            key: leafSegment,
-            value: nextValue,
-            previousValue: previousLeafValue,
-          },
-        ]
-      : [],
-  };
-}
-
-function rebuildRootValue(
-  containers: Array<Record<PropertyKey, unknown> | unknown[]>,
-  segments: readonly PropertyKey[],
-  nextChildValue: unknown,
+function rebuildValueFromAncestorChain(
+  ancestors: readonly PulseWriteAncestorStep[],
+  nextLeafValue: unknown,
 ): unknown {
-  let rebuiltValue = nextChildValue;
+  let rebuiltValue = nextLeafValue;
 
-  for (let index = containers.length - 1; index >= 0; index -= 1) {
-    const container = containers[index] as
-      | Record<PropertyKey, unknown>
-      | unknown[];
-    const segment = segments[index] as PropertyKey;
-
-    if (Array.isArray(container)) {
-      const nextContainer = container.slice();
-      nextContainer[segment as number] = rebuiltValue;
-      rebuiltValue = nextContainer;
-      continue;
-    }
-
-    rebuiltValue = {
-      ...container,
-      [segment]: rebuiltValue,
-    };
+  for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+    const ancestor = ancestors[index] as PulseWriteAncestorStep;
+    const container = cloneAncestorContainer(
+      ancestor.currentValue,
+      ancestor.childKey,
+      [],
+    );
+    writeChildValue(container, ancestor.childKey, rebuiltValue);
+    rebuiltValue = container;
   }
 
   return rebuiltValue;
+}
+
+export function cloneAncestorContainer(
+  currentValue: unknown,
+  nextSegment: PropertyKey,
+  traversedPath: PulsePath,
+): Record<PropertyKey, unknown> | unknown[] {
+  if (Array.isArray(currentValue) || isPlainObject(currentValue)) {
+    return cloneExistingWritableContainer(currentValue);
+  }
+
+  if (currentValue === undefined) {
+    return typeof nextSegment === "number" ? [] : {};
+  }
+
+  throw new TypeError(
+    `Cannot write through non-traversable value at ${formatPulsePath(traversedPath)}.`,
+  );
 }
 
 function canTraverseAsStructuredValue(
@@ -814,12 +322,13 @@ function writeValueAtPath(
   currentState: ValueState,
   path: PulsePath,
   nextValue: unknown,
-  traversedPath: PulsePath,
   shouldCollectMutations: boolean,
+  traversedPath: PropertyKey[],
+  pathIndex = 0,
 ): WriteStepResult {
   const currentValue = currentState.exists ? currentState.value : undefined;
 
-  if (path.length === 0) {
+  if (pathIndex === path.length) {
     if (currentState.exists && Object.is(currentState.value, nextValue)) {
       return {
         changed: false,
@@ -834,7 +343,7 @@ function writeValueAtPath(
       collectMutations(
         currentState,
         readExistingValue(nextValue),
-        traversedPath,
+        [...traversedPath],
         mutations,
       );
     }
@@ -846,33 +355,35 @@ function writeValueAtPath(
     };
   }
 
-  const segment = path[0] as PropertyKey;
-  const restPath = path.slice(1);
+  const segment = path[pathIndex] as PropertyKey;
 
   if (segment === ARRAY_LENGTH_SEGMENT) {
     return writeArrayLength(
       currentValue,
-      restPath,
       nextValue,
       traversedPath,
       shouldCollectMutations,
+      path,
+      pathIndex,
     );
   }
 
-  const nextPath = [...traversedPath, segment];
-  const container = cloneWritableContainer(
+  const container = cloneAncestorContainer(
     currentValue,
     segment,
     traversedPath,
   );
   const previousChildState = readChildState(currentValue, segment);
+  traversedPath.push(segment);
   const nextChildResult = writeValueAtPath(
     previousChildState,
-    restPath,
+    path,
     nextValue,
-    nextPath,
     shouldCollectMutations,
+    traversedPath,
+    pathIndex + 1,
   );
+  traversedPath.pop();
 
   if (!nextChildResult.changed) {
     return {
@@ -886,12 +397,12 @@ function writeValueAtPath(
 
   writeChildValue(container, segment, nextChildResult.value);
 
-  const mutations = [...nextChildResult.mutations];
   if (
     shouldCollectMutations &&
     Array.isArray(container) &&
     previousLength !== container.length
   ) {
+    const mutations = [...nextChildResult.mutations];
     mutations.push({
       kind: "replace",
       path: [...traversedPath, ARRAY_LENGTH_SEGMENT],
@@ -899,23 +410,30 @@ function writeValueAtPath(
       value: container.length,
       previousValue: previousLength,
     });
+
+    return {
+      changed: true,
+      value: container,
+      mutations,
+    };
   }
 
   return {
     changed: true,
     value: container,
-    mutations,
+    mutations: nextChildResult.mutations,
   };
 }
 
 function writeArrayLength(
   currentValue: unknown,
-  restPath: readonly PropertyKey[],
   nextValue: unknown,
-  traversedPath: PulsePath,
+  traversedPath: readonly PropertyKey[],
   shouldCollectMutations: boolean,
+  path: PulsePath,
+  pathIndex: number,
 ): WriteStepResult {
-  if (restPath.length > 0) {
+  if (pathIndex !== path.length - 1) {
     throw new TypeError(
       `Cannot write below array length at ${formatPulsePath(traversedPath)}.`,
     );
@@ -946,7 +464,7 @@ function writeArrayLength(
     collectMutations(
       readExistingValue(arrayValue),
       readExistingValue(nextArrayValue),
-      traversedPath,
+      [...traversedPath],
       mutations,
     );
   }
@@ -958,29 +476,7 @@ function writeArrayLength(
   };
 }
 
-function cloneWritableContainer(
-  currentValue: unknown,
-  nextSegment: PropertyKey,
-  traversedPath: PulsePath,
-): Record<PropertyKey, unknown> | unknown[] {
-  if (Array.isArray(currentValue)) {
-    return currentValue.slice();
-  }
-
-  if (isPlainObject(currentValue)) {
-    return { ...currentValue };
-  }
-
-  if (currentValue === undefined) {
-    return typeof nextSegment === "number" ? [] : {};
-  }
-
-  throw new TypeError(
-    `Cannot write through non-traversable value at ${formatPulsePath(traversedPath)}.`,
-  );
-}
-
-function writeChildValue(
+export function writeChildValue(
   container: Record<PropertyKey, unknown> | unknown[],
   segment: PropertyKey,
   nextChildValue: unknown,
