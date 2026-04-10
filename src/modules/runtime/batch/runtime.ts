@@ -1,7 +1,11 @@
 import type { PulseMutation } from "../../contract/types.js";
 import type { PulsePath } from "../../path/index.js";
 import { collectPulseMutationsAtPaths } from "../../store/mutations.js";
-import { notifyNodeTree, notifySpecificNodes } from "../notify/runtime.js";
+import {
+  notifyNodeTree,
+  notifySpecificNodes,
+  tryNotifySpecificNodesByExactMutations,
+} from "../notify/runtime.js";
 import { hasListenerNodesInSubtree } from "../listener/topology.js";
 import {
   readChildNode,
@@ -149,9 +153,8 @@ export function notifyOrQueueNodeTree(
   if (pending) {
     pending.currentRootValue = currentRootValue;
 
-    if (changedPath && !pending.changedPathSet.has(changedPath)) {
-      pending.changedPathSet.add(changedPath);
-      pending.changedPaths.push(changedPath);
+    if (changedPath) {
+      addPendingChangedPath(pending, changedPath);
     }
 
     if (!affectedNodes || affectedNodes.length === 0) {
@@ -165,19 +168,12 @@ export function notifyOrQueueNodeTree(
       return undefined;
     }
 
-    for (const node of affectedNodes) {
-      if (pending.affectedNodeSet.has(node)) {
-        continue;
-      }
-
-      pending.affectedNodeSet.add(node);
-      pending.affectedNodes.push(node);
-    }
+    addPendingAffectedNodes(pending, affectedNodes);
 
     pending.directNodeValue = mergePendingDirectNodeValue(
       pending.directNodeValue,
-      pending.affectedNodes,
-      pending.changedPaths,
+      readSinglePendingAffectedNode(pending),
+      hasSinglePendingChangedPath(pending),
       directNodeValue,
     );
 
@@ -185,20 +181,29 @@ export function notifyOrQueueNodeTree(
   }
 
   runtime.pendingNotification = {
-    affectedNodeSet: new Set(affectedNodes ?? []),
-    affectedNodes: affectedNodes ? [...affectedNodes] : [],
+    affectedNodeSet:
+      affectedNodes && affectedNodes.length > 1 ? new Set(affectedNodes) : null,
+    affectedNodes:
+      affectedNodes && affectedNodes.length > 1 ? [...affectedNodes] : null,
     canNotifyDirectly: Boolean(affectedNodes && affectedNodes.length > 0),
-    changedPathSet: changedPath ? new Set([changedPath]) : new Set(),
-    changedPaths: changedPath ? [changedPath] : [],
+    changedPathSet: null,
+    changedPaths: null,
     currentRootValue,
     directNodeValue: mergePendingDirectNodeValue(
       undefined,
-      affectedNodes,
-      changedPath ? [changedPath] : [],
+      affectedNodes && affectedNodes.length === 1
+        ? affectedNodes[0]
+        : undefined,
+      Boolean(changedPath),
       directNodeValue,
     ),
     previousRootValue,
     rootNode,
+    singleAffectedNode:
+      affectedNodes && affectedNodes.length === 1
+        ? (affectedNodes[0] ?? null)
+        : null,
+    singleChangedPath: changedPath ?? null,
   };
 
   return undefined;
@@ -219,24 +224,36 @@ function flushPendingNotifications(runtime: PulseRuntime<unknown>): unknown {
 
   if (
     pending.canNotifyDirectly &&
-    pending.affectedNodes.length > 0 &&
+    hasPendingAffectedNodes(pending) &&
     batchWriteState &&
     batchWriteState.canAccumulateMutations
   ) {
-    const directMutations = Array.from(
-      batchWriteState.pendingMutations.values(),
-    );
+    const affectedNodes = materializePendingAffectedNodes(pending);
+    const changedPaths = materializePendingChangedPaths(pending);
+    const directMutationMap = batchWriteState.pendingMutations;
 
-    if (directMutations.length === 0) {
+    if (directMutationMap.size === 0) {
       return undefined;
     }
 
+    const exactNotifyResult = tryNotifySpecificNodesByExactMutations(
+      affectedNodes,
+      directMutationMap,
+      pending.directNodeValue,
+    );
+
+    if (exactNotifyResult.handled) {
+      return exactNotifyResult.error;
+    }
+
+    const directMutations = Array.from(directMutationMap.values());
+
     return notifySpecificNodes(
-      pending.affectedNodes,
+      affectedNodes,
       pending.previousRootValue,
       pending.currentRootValue,
       directMutations,
-      undefined,
+      changedPaths,
       pending.directNodeValue,
     );
   }
@@ -244,8 +261,9 @@ function flushPendingNotifications(runtime: PulseRuntime<unknown>): unknown {
   const mayAffectListeners = createListenerPathMatcher(pending.rootNode);
 
   const relevantChangedPaths: PulsePath[] = [];
+  const changedPaths = materializePendingChangedPaths(pending);
 
-  for (const path of pending.changedPaths) {
+  for (const path of changedPaths) {
     if (mayAffectListeners(path)) {
       relevantChangedPaths.push(path);
     }
@@ -267,9 +285,11 @@ function flushPendingNotifications(runtime: PulseRuntime<unknown>): unknown {
     return undefined;
   }
 
-  if (pending.canNotifyDirectly && pending.affectedNodes.length > 0) {
+  if (pending.canNotifyDirectly && hasPendingAffectedNodes(pending)) {
+    const affectedNodes = materializePendingAffectedNodes(pending);
+
     return notifySpecificNodes(
-      pending.affectedNodes,
+      affectedNodes,
       pending.previousRootValue,
       pending.currentRootValue,
       mutations,
@@ -304,21 +324,11 @@ function collectRelevantBatchMutations(
 
 function mergePendingDirectNodeValue(
   existingDirectNodeValue: DirectNodeNotificationValue | undefined,
-  affectedNodes: readonly PulseNodeState<unknown, unknown>[] | undefined,
-  changedPaths: readonly PulsePath[],
+  affectedNode: PulseNodeState<unknown, unknown> | undefined,
+  hasSingleChangedPath: boolean,
   nextDirectNodeValue: DirectNodeNotificationValue | undefined,
 ): DirectNodeNotificationValue | undefined {
-  if (
-    !affectedNodes ||
-    affectedNodes.length !== 1 ||
-    changedPaths.length !== 1
-  ) {
-    return undefined;
-  }
-
-  const [affectedNode] = affectedNodes;
-
-  if (!affectedNode) {
+  if (!affectedNode || !hasSingleChangedPath) {
     return undefined;
   }
 
@@ -342,4 +352,159 @@ function mergePendingDirectNodeValue(
   }
 
   return nextDirectNodeValue;
+}
+
+function addPendingChangedPath(
+  pending: PulseRuntime<unknown>["pendingNotification"] extends infer T
+    ? Exclude<T, null>
+    : never,
+  changedPath: PulsePath,
+): void {
+  const singleChangedPath = pending.singleChangedPath;
+
+  if (!singleChangedPath && !pending.changedPaths) {
+    pending.singleChangedPath = changedPath;
+    return;
+  }
+
+  if (singleChangedPath === changedPath) {
+    return;
+  }
+
+  let changedPathSet = pending.changedPathSet;
+  let changedPaths = pending.changedPaths;
+
+  if (!changedPathSet || !changedPaths) {
+    changedPathSet = new Set<PulsePath>();
+    changedPaths = [];
+
+    if (singleChangedPath) {
+      changedPathSet.add(singleChangedPath);
+      changedPaths.push(singleChangedPath);
+      pending.singleChangedPath = null;
+    }
+
+    pending.changedPathSet = changedPathSet;
+    pending.changedPaths = changedPaths;
+  }
+
+  if (changedPathSet.has(changedPath)) {
+    return;
+  }
+
+  changedPathSet.add(changedPath);
+  changedPaths.push(changedPath);
+}
+
+function addPendingAffectedNodes(
+  pending: PulseRuntime<unknown>["pendingNotification"] extends infer T
+    ? Exclude<T, null>
+    : never,
+  affectedNodes: readonly PulseNodeState<unknown, unknown>[],
+): void {
+  if (affectedNodes.length === 1) {
+    const [affectedNode] = affectedNodes;
+
+    if (affectedNode) {
+      addPendingAffectedNode(pending, affectedNode);
+    }
+
+    return;
+  }
+
+  for (const affectedNode of affectedNodes) {
+    addPendingAffectedNode(pending, affectedNode);
+  }
+}
+
+function addPendingAffectedNode(
+  pending: PulseRuntime<unknown>["pendingNotification"] extends infer T
+    ? Exclude<T, null>
+    : never,
+  affectedNode: PulseNodeState<unknown, unknown>,
+): void {
+  const singleAffectedNode = pending.singleAffectedNode;
+
+  if (!singleAffectedNode && !pending.affectedNodes) {
+    pending.singleAffectedNode = affectedNode;
+    return;
+  }
+
+  if (singleAffectedNode === affectedNode) {
+    return;
+  }
+
+  let affectedNodeSet = pending.affectedNodeSet;
+  let affectedNodes = pending.affectedNodes;
+
+  if (!affectedNodeSet || !affectedNodes) {
+    affectedNodeSet = new Set<PulseNodeState<unknown, unknown>>();
+    affectedNodes = [];
+
+    if (singleAffectedNode) {
+      affectedNodeSet.add(singleAffectedNode);
+      affectedNodes.push(singleAffectedNode);
+      pending.singleAffectedNode = null;
+    }
+
+    pending.affectedNodeSet = affectedNodeSet;
+    pending.affectedNodes = affectedNodes;
+  }
+
+  if (affectedNodeSet.has(affectedNode)) {
+    return;
+  }
+
+  affectedNodeSet.add(affectedNode);
+  affectedNodes.push(affectedNode);
+}
+
+function hasPendingAffectedNodes(
+  pending: PulseRuntime<unknown>["pendingNotification"] extends infer T
+    ? Exclude<T, null>
+    : never,
+): boolean {
+  return Boolean(pending.singleAffectedNode || pending.affectedNodes?.length);
+}
+
+function materializePendingAffectedNodes(
+  pending: PulseRuntime<unknown>["pendingNotification"] extends infer T
+    ? Exclude<T, null>
+    : never,
+): readonly PulseNodeState<unknown, unknown>[] {
+  if (pending.affectedNodes) {
+    return pending.affectedNodes;
+  }
+
+  return pending.singleAffectedNode ? [pending.singleAffectedNode] : [];
+}
+
+function materializePendingChangedPaths(
+  pending: PulseRuntime<unknown>["pendingNotification"] extends infer T
+    ? Exclude<T, null>
+    : never,
+): readonly PulsePath[] {
+  if (pending.changedPaths) {
+    return pending.changedPaths;
+  }
+
+  return pending.singleChangedPath ? [pending.singleChangedPath] : [];
+}
+
+function readSinglePendingAffectedNode(
+  pending: PulseRuntime<unknown>["pendingNotification"] extends infer T
+    ? Exclude<T, null>
+    : never,
+): PulseNodeState<unknown, unknown> | undefined {
+  return pending.affectedNodes
+    ? undefined
+    : (pending.singleAffectedNode ?? undefined);
+}
+
+function hasSinglePendingChangedPath(
+  pending: PulseRuntime<unknown>["pendingNotification"] extends infer T
+    ? Exclude<T, null>
+    : never,
+): boolean {
+  return !pending.changedPaths && pending.singleChangedPath !== null;
 }

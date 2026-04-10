@@ -10,11 +10,23 @@ const BENCHMARK_PRESETS = {
     sampleCount: 5,
     warmupIterations: 25,
   },
+  smoke: {
+    maxCalibrationScale: 4,
+    minSampleDurationMs: 2,
+    sampleCount: 1,
+    warmupIterations: 1,
+  },
   quick: {
     maxCalibrationScale: 64,
     minSampleDurationMs: 12,
     sampleCount: 3,
     warmupIterations: 10,
+  },
+  report: {
+    maxCalibrationScale: 8,
+    minSampleDurationMs: 4,
+    sampleCount: 2,
+    warmupIterations: 4,
   },
 };
 

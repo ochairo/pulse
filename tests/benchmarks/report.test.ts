@@ -1,10 +1,29 @@
 import { describe, expect, it } from "vitest";
+import { createComparisonBenchmarkSections } from "../../benchmarks/compare.mjs";
 import {
   parseReportOptions,
   renderMarkdownReport,
 } from "../../benchmarks/report.mjs";
 
+const ALLOWED_LIBRARY_PREFIXES = ["pulse", "Legend-State", "valtio"];
+
 describe("benchmark report", () => {
+  it("keeps the comparison suite limited to the supported libraries", () => {
+    const sections = createComparisonBenchmarkSections();
+
+    for (const section of sections) {
+      for (const benchmark of section.cases) {
+        const benchmarkLibrary = ALLOWED_LIBRARY_PREFIXES.find(
+          (library) =>
+            benchmark.name === library ||
+            benchmark.name.startsWith(`${library} `),
+        );
+
+        expect(benchmarkLibrary).toBeDefined();
+      }
+    }
+  });
+
   it("parses quick suite selection flags", () => {
     expect(parseReportOptions(["--preset=quick", "--compare-only"])).toEqual({
       includeComparison: true,

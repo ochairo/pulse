@@ -19,20 +19,30 @@ export function readResolvedNodeValue<T>(
     return valueCache.get(cacheNode);
   }
 
-  let resolvedValue: unknown;
+  const uncachedNodes: PulseNodeState<unknown, unknown>[] = [];
+  let currentNode: PulseNodeState<unknown, unknown> | null = cacheNode;
 
-  if (node.parent === null || node.key === null) {
-    resolvedValue = rootValue;
-  } else {
-    const parentValue = readResolvedNodeValue(
-      node.parent,
-      rootValue,
-      valueCache,
-    );
-    resolvedValue = readNodeChildValue(parentValue, node.key);
+  while (currentNode && !valueCache.has(currentNode)) {
+    uncachedNodes.push(currentNode);
+    currentNode = currentNode.parent;
   }
 
-  valueCache.set(cacheNode, resolvedValue);
+  let resolvedValue = currentNode ? valueCache.get(currentNode) : rootValue;
+
+  for (let index = uncachedNodes.length - 1; index >= 0; index -= 1) {
+    const uncachedNode = uncachedNodes[index] as PulseNodeState<
+      unknown,
+      unknown
+    >;
+
+    resolvedValue =
+      uncachedNode.parent === null || uncachedNode.key === null
+        ? rootValue
+        : readNodeChildValue(resolvedValue, uncachedNode.key);
+
+    valueCache.set(uncachedNode, resolvedValue);
+  }
+
   return resolvedValue;
 }
 

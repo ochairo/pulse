@@ -1,5 +1,8 @@
 import type { PulseChangeEvent } from "../../contract/types.js";
-import { isPathPrefix } from "../../path/index.js";
+import {
+  matchesPathPrefixMatcher,
+  type PulsePathPrefixMatcher,
+} from "../../path/index.js";
 
 export type PulseListener<T> = (event: PulseChangeEvent<T>) => void;
 
@@ -56,13 +59,7 @@ export function dispatchPulseListeners<T>(
 
 export function shouldDispatchToExactPath(
   nodePath: readonly PropertyKey[],
-  exactPaths: readonly (readonly PropertyKey[])[],
+  exactPathMatcher: PulsePathPrefixMatcher,
 ): boolean {
-  for (const path of exactPaths) {
-    if (isPathPrefix(path, nodePath)) {
-      return true;
-    }
-  }
-
-  return false;
+  return matchesPathPrefixMatcher(nodePath, exactPathMatcher);
 }

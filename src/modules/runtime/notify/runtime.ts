@@ -2,8 +2,10 @@ import type { PulseChangeEvent, PulseMutation } from "../../contract/types.js";
 import type { DirectNodeNotificationValue } from "../batch/runtime.js";
 import {
   ARRAY_LENGTH_SEGMENT,
+  createPathPrefixMatcher,
   isPathPrefix,
   pathsMatch,
+  type PulsePathPrefixMatcher,
   toPublicPulseMutation,
 } from "../../path/index.js";
 import {
@@ -44,15 +46,17 @@ export function notifyNodeTree(
     return undefined;
   }
 
-  const exactPaths = resolveExactPaths(triggerPaths, mutations);
-
   if (hasOnlyLocalListenerNode(node)) {
+    const exactPathMatcher = createPathPrefixMatcher(
+      resolveExactPaths(triggerPaths, mutations),
+    );
+
     return notifyNodeForMutations(
       node,
       previousRootValue,
       currentRootValue,
       mutations,
-      exactPaths,
+      exactPathMatcher,
     );
   }
 
@@ -60,7 +64,6 @@ export function notifyNodeTree(
     collectNodeMutationBuckets(node, mutations),
     previousRootValue,
     currentRootValue,
-    exactPaths,
   );
 }
 
@@ -76,10 +79,11 @@ export function notifySpecificNodes(
     return undefined;
   }
 
-  const exactPaths = resolveExactPaths(triggerPaths, mutations);
-
   if (nodes.length === 1) {
     const [node] = nodes;
+    const exactPathMatcher = createPathPrefixMatcher(
+      resolveExactPaths(triggerPaths, mutations),
+    );
 
     return node
       ? notifyNodeFromMutationScan(
@@ -87,7 +91,7 @@ export function notifySpecificNodes(
           previousRootValue,
           currentRootValue,
           mutations,
-          exactPaths,
+          exactPathMatcher,
           new Map(),
           new Map(),
           readDirectNodeValue(node, directNodeValue),
@@ -96,12 +100,16 @@ export function notifySpecificNodes(
   }
 
   if (nodes.length * mutations.length <= SIMPLE_SPECIFIC_NOTIFY_PAIR_LIMIT) {
+    const exactPathMatcher = createPathPrefixMatcher(
+      resolveExactPaths(triggerPaths, mutations),
+    );
+
     return notifySpecificNodesDirect(
       nodes,
       previousRootValue,
       currentRootValue,
       mutations,
-      exactPaths,
+      exactPathMatcher,
       directNodeValue,
     );
   }
@@ -123,7 +131,7 @@ export function notifySpecificNodes(
       previousRootValue,
       currentRootValue,
       bucket.mutations,
-      exactPaths,
+      undefined,
       previousValueCache,
       currentValueCache,
       readDirectNodeValue(bucket.node, directNodeValue),
@@ -135,12 +143,60 @@ export function notifySpecificNodes(
   return firstError;
 }
 
+export function tryNotifySpecificNodesByExactMutations(
+  nodes: readonly PulseNodeState<unknown, unknown>[],
+  mutationsByPath: ReadonlyMap<readonly PropertyKey[], PulseMutation>,
+  directNodeValue?: DirectNodeNotificationValue,
+): { readonly handled: boolean; readonly error: unknown } {
+  if (nodes.length === 0) {
+    return { handled: true, error: undefined };
+  }
+
+  if (mutationsByPath.size < nodes.length) {
+    return { handled: false, error: undefined };
+  }
+
+  let firstError: unknown;
+
+  for (const node of nodes) {
+    const mutation = mutationsByPath.get(readNodePath(node));
+
+    if (!mutation) {
+      return { handled: false, error: undefined };
+    }
+
+    const nodeDirectValue = readDirectNodeValue(node, directNodeValue);
+    const previousValue = nodeDirectValue
+      ? nodeDirectValue.previousValue
+      : mutation.previousValue;
+    const currentValue = nodeDirectValue
+      ? nodeDirectValue.currentValue
+      : mutation.kind === "delete"
+        ? undefined
+        : mutation.value;
+
+    if (Object.is(previousValue, currentValue)) {
+      continue;
+    }
+
+    const nodeError = notifyNodeListeners(node, {
+      currentValue,
+      previousValue,
+      changes: [toPublicRelevantMutation(mutation)],
+    });
+
+    firstError ??= nodeError;
+  }
+
+  return { handled: true, error: firstError };
+}
+
 function notifySpecificNodesDirect(
   nodes: readonly PulseNodeState<unknown, unknown>[],
   previousRootValue: unknown,
   currentRootValue: unknown,
   mutations: readonly PulseMutation[],
-  exactPaths: readonly (readonly PropertyKey[])[],
+  exactPathMatcher: PulsePathPrefixMatcher,
   directNodeValue?: DirectNodeNotificationValue,
 ): unknown {
   const previousValueCache = new Map<
@@ -159,7 +215,7 @@ function notifySpecificNodesDirect(
       previousRootValue,
       currentRootValue,
       mutations,
-      exactPaths,
+      exactPathMatcher,
       previousValueCache,
       currentValueCache,
       readDirectNodeValue(node, directNodeValue),
@@ -179,113 +235,98 @@ function collectSpecificNodeMutationBuckets(
     return [];
   }
 
-  const rootNode = nodes[0]?.runtime.rootNode;
-
-  if (!rootNode) {
-    return [];
-  }
-
-  const targetNodes = new Set(nodes);
   const orderedBuckets = nodes.map((node) => ({
     node,
     mutations: [] as PulseMutation[],
+    active: false,
   }));
-  const bucketsByNode = new Map(
-    orderedBuckets.map((bucket) => [bucket.node, bucket] as const),
-  );
-  const rootCacheEntry: ListenerTreePathCacheEntry = {
+  const rootCacheEntry: SpecificNodePathCacheEntry = {
     children: new Map(),
-    node: rootNode,
+    descendantBuckets: [],
   };
-  const descendantNodeCache = new Map<
-    PulseNodeState<unknown, unknown>,
-    readonly PulseNodeState<unknown, unknown>[]
-  >();
-  const descendantMutationsByFrontier = new Map<
-    PulseNodeState<unknown, unknown>,
-    PulseMutation[]
-  >();
 
-  for (const mutation of mutations) {
-    let currentNode: PulseNodeState<unknown, unknown> | undefined = rootNode;
+  for (const bucket of orderedBuckets) {
     let cacheEntry = rootCacheEntry;
 
-    collectSpecificNodeMutation(
-      currentNode,
-      mutation,
-      targetNodes,
-      bucketsByNode,
-    );
-
-    for (const segment of mutation.path) {
+    for (const segment of readNodePath(bucket.node)) {
+      cacheEntry.descendantBuckets.push(bucket);
       let nextCacheEntry = cacheEntry.children.get(segment);
 
       if (!nextCacheEntry) {
         nextCacheEntry = {
           children: new Map(),
-          node: currentNode ? readChildNode(currentNode, segment) : undefined,
+          descendantBuckets: [],
         };
         cacheEntry.children.set(segment, nextCacheEntry);
       }
 
       cacheEntry = nextCacheEntry;
-      currentNode = cacheEntry.node;
+    }
 
-      if (!currentNode || !hasListenerNodesInSubtree(currentNode)) {
+    cacheEntry.bucket = bucket;
+  }
+
+  for (const mutation of mutations) {
+    let cacheEntry: SpecificNodePathCacheEntry | undefined = rootCacheEntry;
+    let bucket = cacheEntry.bucket;
+
+    if (bucket) {
+      bucket.active = true;
+      bucket.mutations.push(mutation);
+    }
+
+    for (const segment of mutation.path) {
+      cacheEntry = cacheEntry.children.get(segment);
+
+      if (!cacheEntry) {
         break;
       }
 
-      collectSpecificNodeMutation(
-        currentNode,
-        mutation,
-        targetNodes,
-        bucketsByNode,
-      );
-    }
+      bucket = cacheEntry.bucket;
 
-    if (currentNode && hasDescendantListenerNodes(currentNode)) {
-      let descendantMutations = descendantMutationsByFrontier.get(currentNode);
-
-      if (!descendantMutations) {
-        descendantMutations = [];
-        descendantMutationsByFrontier.set(currentNode, descendantMutations);
-      }
-
-      descendantMutations.push(mutation);
-    }
-  }
-
-  for (const [
-    frontierNode,
-    frontierMutations,
-  ] of descendantMutationsByFrontier) {
-    const descendantNodes = readSpecificDescendantListenerNodes(
-      frontierNode,
-      targetNodes,
-      descendantNodeCache,
-    );
-
-    for (const descendantNode of descendantNodes) {
-      const bucket = bucketsByNode.get(descendantNode);
-
-      if (!bucket) {
-        continue;
-      }
-
-      for (const mutation of frontierMutations) {
+      if (bucket) {
+        bucket.active = true;
         bucket.mutations.push(mutation);
       }
     }
+
+    if (cacheEntry) {
+      const descendantBuckets = cacheEntry.descendantBuckets;
+
+      for (
+        let descendantIndex = 0;
+        descendantIndex < descendantBuckets.length;
+        descendantIndex += 1
+      ) {
+        const descendantBucket = descendantBuckets[descendantIndex];
+
+        if (!descendantBucket) {
+          continue;
+        }
+
+        descendantBucket.active = true;
+        descendantBucket.mutations.push(mutation);
+      }
+    }
   }
 
-  return orderedBuckets.filter((bucket) => bucket.mutations.length > 0);
+  const activeBuckets: NodeMutationBucket[] = [];
+
+  for (let index = 0; index < orderedBuckets.length; index += 1) {
+    const bucket = orderedBuckets[index];
+
+    if (bucket?.active) {
+      activeBuckets.push(bucket);
+    }
+  }
+
+  return activeBuckets;
 }
 
 function notifyMutationBuckets(
   buckets: readonly NodeMutationBucket[],
   previousRootValue: unknown,
   currentRootValue: unknown,
-  exactPaths: readonly (readonly PropertyKey[])[],
 ): unknown {
   let firstError: unknown;
   const previousValueCache = new Map<
@@ -307,7 +348,7 @@ function notifyMutationBuckets(
       previousRootValue,
       currentRootValue,
       bucket.mutations,
-      exactPaths,
+      undefined,
       previousValueCache,
       currentValueCache,
     );
@@ -403,11 +444,18 @@ function collectNodeMutationBuckets(
 interface NodeMutationBucket {
   readonly node: PulseNodeState<unknown, unknown>;
   readonly mutations: PulseMutation[];
+  active: boolean;
 }
 
 interface ListenerTreePathCacheEntry {
   children: Map<PropertyKey, ListenerTreePathCacheEntry>;
   node: PulseNodeState<unknown, unknown> | undefined;
+}
+
+interface SpecificNodePathCacheEntry {
+  bucket?: NodeMutationBucket;
+  children: Map<PropertyKey, SpecificNodePathCacheEntry>;
+  descendantBuckets: NodeMutationBucket[];
 }
 
 function collectDescendantMutations(
@@ -446,50 +494,12 @@ function readDescendantListenerNodes(
   return descendants;
 }
 
-function collectSpecificDescendantMutations(
-  node: PulseNodeState<unknown, unknown>,
-  targetNodes: ReadonlySet<PulseNodeState<unknown, unknown>>,
-  descendants: PulseNodeState<unknown, unknown>[],
-): void {
-  forEachChildNode(node, (childNode) => {
-    if (!hasListenerNodesInSubtree(childNode)) {
-      return;
-    }
-
-    if (hasLocalListeners(childNode) && targetNodes.has(childNode)) {
-      descendants.push(childNode);
-    }
-
-    collectSpecificDescendantMutations(childNode, targetNodes, descendants);
-  });
-}
-
-function readSpecificDescendantListenerNodes(
-  node: PulseNodeState<unknown, unknown>,
-  targetNodes: ReadonlySet<PulseNodeState<unknown, unknown>>,
-  descendantNodeCache: Map<
-    PulseNodeState<unknown, unknown>,
-    readonly PulseNodeState<unknown, unknown>[]
-  >,
-): readonly PulseNodeState<unknown, unknown>[] {
-  const cachedDescendants = descendantNodeCache.get(node);
-
-  if (cachedDescendants) {
-    return cachedDescendants;
-  }
-
-  const descendants: PulseNodeState<unknown, unknown>[] = [];
-  collectSpecificDescendantMutations(node, targetNodes, descendants);
-  descendantNodeCache.set(node, descendants);
-  return descendants;
-}
-
 function notifyNodeForMutations<T>(
   node: PulseNodeState<unknown, T>,
   previousRootValue: unknown,
   currentRootValue: unknown,
   mutations: readonly PulseMutation[],
-  exactPaths: readonly (readonly PropertyKey[])[],
+  exactPathMatcher: PulsePathPrefixMatcher | undefined,
   previousValueCache?: Map<PulseNodeState<unknown, unknown>, unknown>,
   currentValueCache?: Map<PulseNodeState<unknown, unknown>, unknown>,
   directNodeValue?: { currentValue: unknown; previousValue: unknown },
@@ -500,7 +510,10 @@ function notifyNodeForMutations<T>(
 
   const nodePath = readNodePath(node);
 
-  if (!shouldDispatchToExactPath(nodePath, exactPaths)) {
+  if (
+    exactPathMatcher &&
+    !shouldDispatchToExactPath(nodePath, exactPathMatcher)
+  ) {
     return undefined;
   }
 
@@ -540,7 +553,7 @@ function notifyNodeFromMutationScan<T>(
   previousRootValue: unknown,
   currentRootValue: unknown,
   mutations: readonly PulseMutation[],
-  exactPaths: readonly (readonly PropertyKey[])[],
+  exactPathMatcher: PulsePathPrefixMatcher,
   previousValueCache: Map<PulseNodeState<unknown, unknown>, unknown>,
   currentValueCache: Map<PulseNodeState<unknown, unknown>, unknown>,
   directNodeValue?: DirectNodeNotificationValue,
@@ -551,7 +564,7 @@ function notifyNodeFromMutationScan<T>(
 
   const nodePath = readNodePath(node);
 
-  if (!shouldDispatchToExactPath(nodePath, exactPaths)) {
+  if (!shouldDispatchToExactPath(nodePath, exactPathMatcher)) {
     return undefined;
   }
 
@@ -676,32 +689,11 @@ function collectNodeMutation(
   const bucket: NodeMutationBucket = {
     node,
     mutations: [mutation],
+    active: false,
   };
 
   bucketsByNode.set(node, bucket);
   orderedBuckets.push(bucket);
-}
-
-function collectSpecificNodeMutation(
-  node: PulseNodeState<unknown, unknown> | undefined,
-  mutation: PulseMutation,
-  targetNodes: ReadonlySet<PulseNodeState<unknown, unknown>>,
-  bucketsByNode: ReadonlyMap<
-    PulseNodeState<unknown, unknown>,
-    NodeMutationBucket
-  >,
-): void {
-  if (!node || !hasLocalListeners(node) || !targetNodes.has(node)) {
-    return;
-  }
-
-  const bucket = bucketsByNode.get(node);
-
-  if (!bucket) {
-    return;
-  }
-
-  bucket.mutations.push(mutation);
 }
 
 function collectNodeMutations(
@@ -720,12 +712,22 @@ function notifyNodeListeners<T>(
   event: PulseChangeEvent<T>,
 ): unknown {
   const singleListenerEntry = readSingleListenerEntry(node);
+
+  if (singleListenerEntry) {
+    try {
+      singleListenerEntry.callback(event);
+      return undefined;
+    } catch (error) {
+      return error;
+    }
+  }
+
   const listenerSnapshot = readListenerSnapshot(node);
 
   return dispatchPulseListeners(
     node.listeners,
     event,
-    singleListenerEntry,
+    undefined,
     listenerSnapshot,
     listenerSnapshot ? () => node.listenerSnapshot : undefined,
     listenerSnapshot

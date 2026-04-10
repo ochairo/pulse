@@ -1,12 +1,11 @@
 import { fileURLToPath } from "node:url";
 import { getEnvironment, writeJsonReport, writeTextReport } from "./shared.mjs";
 
-const COMPARISON_LIBRARIES = ["pulse", "Legend-State", "MobX", "valtio"];
+const COMPARISON_LIBRARIES = ["pulse", "Legend-State", "valtio"];
 
 const SUMMARY_LIBRARY_GROUPS = {
   pulse: ["pulse"],
   "Legend-State": ["Legend-State"],
-  MobX: ["MobX"],
   valtio: ["valtio"],
 };
 
@@ -318,8 +317,9 @@ function renderMarkdownReport(report) {
     "",
     "Shared-scenario comparisons are directional, not absolute. `pulse` includes deep proxy traversal and path-aware listener bookkeeping that the baseline libraries model differently.",
     "Cold scenarios keep state creation inside the timed task. Hot scenarios use `setup` once and measure steady-state reads or writes against an already wrapped store.",
-    "Bulk comparison cases use each library's intended mutation model where available: `runInAction` for MobX, `batch` for Legend-State, and direct proxy mutation for Valtio.",
-    "Subscription cases are library-shaped: Pulse and Legend-State use explicit node listeners, Valtio uses proxy subscriptions, and MobX uses tracked reactions for the row or table shape being observed.",
+    "Bulk comparison cases use each library's intended mutation model where available: `batch` for Legend-State and direct proxy mutation for Valtio.",
+    "Subscription cases are library-shaped: Pulse and Legend-State use explicit node listeners, and Valtio uses proxy subscriptions.",
+    "Use `benchmark:all` for the fastest full-suite smoke pass, `benchmark:report` for the balanced everyday report, and `benchmark:report:full` for the heavier publication-grade pass.",
     "Store creation and wide-array cases isolate initialization and immutable container overhead. Subscription cases focus on exact-path node listeners.",
     "Operation timings are rendered in ns/op throughout this report for consistent comparison across fast and slow scenarios.",
   ];
@@ -374,7 +374,7 @@ export function parseReportOptions(argv = process.argv.slice(2)) {
   return options;
 }
 
-export { renderMarkdownReport };
+export { buildComparisonSummary, renderMarkdownReport };
 
 async function main(argv = process.argv.slice(2)) {
   const options = parseReportOptions(argv);

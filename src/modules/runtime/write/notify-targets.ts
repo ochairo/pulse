@@ -10,78 +10,115 @@ export function collectAffectedListenerNodes<T>(
   node: PulseNodeState<unknown, T>,
   extraNodes: readonly PulseNodeState<unknown, unknown>[],
 ): readonly PulseNodeState<unknown, unknown>[] | undefined {
-  if (!hasListenerNodesInSubtree(node)) {
-    return collectExtraAffectedListenerNodes(extraNodes);
+  const roots = collectAffectedListenerRoots(
+    node as PulseNodeState<unknown, unknown>,
+    extraNodes,
+  );
+
+  if (roots.length === 0) {
+    return undefined;
   }
 
-  if (extraNodes.length === 0 && hasOnlyLocalListenerNode(node)) {
-    return [node as PulseNodeState<unknown, unknown>];
+  if (roots.length === 1) {
+    const [rootNode] = roots;
+
+    if (rootNode && hasOnlyLocalListenerNode(rootNode)) {
+      return [rootNode];
+    }
   }
 
   const affectedNodes: PulseNodeState<unknown, unknown>[] = [];
-  const seenNodes = new Set<PulseNodeState<unknown, unknown>>();
 
-  collectListenerNodesInSubtree(
-    node as PulseNodeState<unknown, unknown>,
-    affectedNodes,
-    seenNodes,
-  );
-
-  for (const extraNode of extraNodes) {
-    collectListenerNodesInSubtree(extraNode, affectedNodes, seenNodes);
+  for (const rootNode of roots) {
+    collectListenerNodesInSubtree(rootNode, affectedNodes);
   }
 
   return affectedNodes.length > 0 ? affectedNodes : undefined;
 }
 
-function collectExtraAffectedListenerNodes(
+function collectAffectedListenerRoots(
+  node: PulseNodeState<unknown, unknown>,
   extraNodes: readonly PulseNodeState<unknown, unknown>[],
-): readonly PulseNodeState<unknown, unknown>[] | undefined {
-  if (extraNodes.length === 0) {
-    return undefined;
+): readonly PulseNodeState<unknown, unknown>[] {
+  const roots: PulseNodeState<unknown, unknown>[] = [];
+
+  if (hasListenerNodesInSubtree(node)) {
+    insertAffectedRoot(roots, node);
   }
-
-  if (extraNodes.length === 1) {
-    const [extraNode] = extraNodes;
-
-    if (!extraNode || !hasListenerNodesInSubtree(extraNode)) {
-      return undefined;
-    }
-
-    return hasOnlyLocalListenerNode(extraNode)
-      ? [extraNode]
-      : collectAffectedListenerNodes(extraNode, []);
-  }
-
-  const affectedNodes: PulseNodeState<unknown, unknown>[] = [];
-  const seenNodes = new Set<PulseNodeState<unknown, unknown>>();
 
   for (const extraNode of extraNodes) {
-    collectListenerNodesInSubtree(extraNode, affectedNodes, seenNodes);
+    if (!hasListenerNodesInSubtree(extraNode)) {
+      continue;
+    }
+
+    insertAffectedRoot(roots, extraNode);
   }
 
-  return affectedNodes.length > 0 ? affectedNodes : undefined;
+  return roots;
+}
+
+function insertAffectedRoot(
+  roots: PulseNodeState<unknown, unknown>[],
+  candidate: PulseNodeState<unknown, unknown>,
+): void {
+  for (let index = 0; index < roots.length; index += 1) {
+    const rootNode = roots[index] as PulseNodeState<unknown, unknown>;
+
+    if (isNodeAncestorOrSelf(rootNode, candidate)) {
+      return;
+    }
+
+    if (isNodeAncestorOrSelf(candidate, rootNode)) {
+      roots.splice(index, 1);
+      index -= 1;
+    }
+  }
+
+  roots.push(candidate);
+}
+
+function isNodeAncestorOrSelf(
+  ancestorNode: PulseNodeState<unknown, unknown>,
+  node: PulseNodeState<unknown, unknown>,
+): boolean {
+  let currentNode: PulseNodeState<unknown, unknown> | null = node;
+
+  while (currentNode) {
+    if (currentNode === ancestorNode) {
+      return true;
+    }
+
+    currentNode = currentNode.parent;
+  }
+
+  return false;
 }
 
 function collectListenerNodesInSubtree(
   node: PulseNodeState<unknown, unknown>,
   affectedNodes: PulseNodeState<unknown, unknown>[],
-  seenNodes: Set<PulseNodeState<unknown, unknown>>,
 ): void {
-  if (!hasListenerNodesInSubtree(node)) {
-    return;
-  }
+  const pendingNodes: PulseNodeState<unknown, unknown>[] = [node];
 
-  if (hasLocalListeners(node) && !seenNodes.has(node)) {
-    seenNodes.add(node);
-    affectedNodes.push(node);
-  }
+  while (pendingNodes.length > 0) {
+    const currentNode = pendingNodes.pop() as PulseNodeState<unknown, unknown>;
 
-  if (!hasDescendantListenerNodes(node)) {
-    return;
-  }
+    if (!hasListenerNodesInSubtree(currentNode)) {
+      continue;
+    }
 
-  forEachChildNode(node, (childNode) => {
-    collectListenerNodesInSubtree(childNode, affectedNodes, seenNodes);
-  });
+    if (hasLocalListeners(currentNode)) {
+      affectedNodes.push(currentNode);
+    }
+
+    if (!hasDescendantListenerNodes(currentNode)) {
+      continue;
+    }
+
+    forEachChildNode(currentNode, (childNode) => {
+      if (hasListenerNodesInSubtree(childNode)) {
+        pendingNodes.push(childNode);
+      }
+    });
+  }
 }

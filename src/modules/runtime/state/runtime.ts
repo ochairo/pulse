@@ -12,11 +12,11 @@ import {
 } from "../listener/dispatch.js";
 
 export interface PendingRuntimeNotification {
-  affectedNodeSet: Set<PulseNodeState<unknown, unknown>>;
-  affectedNodes: PulseNodeState<unknown, unknown>[];
+  affectedNodeSet: Set<PulseNodeState<unknown, unknown>> | null;
+  affectedNodes: PulseNodeState<unknown, unknown>[] | null;
   canNotifyDirectly: boolean;
-  changedPaths: PulsePath[];
-  changedPathSet: Set<PulsePath>;
+  changedPaths: PulsePath[] | null;
+  changedPathSet: Set<PulsePath> | null;
   currentRootValue: unknown;
   directNodeValue:
     | {
@@ -27,6 +27,8 @@ export interface PendingRuntimeNotification {
     | undefined;
   previousRootValue: unknown;
   rootNode: PulseNodeState<unknown, unknown>;
+  singleAffectedNode: PulseNodeState<unknown, unknown> | null;
+  singleChangedPath: PulsePath | null;
 }
 
 export interface PulseNodeState<TRoot, TValue> {

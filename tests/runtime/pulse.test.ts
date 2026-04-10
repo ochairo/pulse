@@ -157,6 +157,45 @@ describe("pulse", () => {
     });
   });
 
+  it("notifies shifted array descendants from index-level ancestor replacements", () => {
+    const state = pulse({
+      rows: [
+        { name: "Ada", role: "admin" },
+        { name: "Lin", role: "editor" },
+      ],
+    });
+    const rows = state.rows as unknown as Record<
+      number,
+      {
+        name: { on(callback: (value: unknown) => void): void };
+      }
+    >;
+    const listener = vi.fn();
+
+    rows[0].name.on(listener);
+
+    state.rows.set([
+      { name: "Grace", role: "owner" },
+      { name: "Ada", role: "admin" },
+      { name: "Lin", role: "editor" },
+    ]);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({
+      currentValue: "Grace",
+      previousValue: "Ada",
+      changes: [
+        {
+          kind: "replace",
+          path: ["rows", 0],
+          key: 0,
+          value: { name: "Grace", role: "owner" },
+          previousValue: { name: "Ada", role: "admin" },
+        },
+      ],
+    });
+  });
+
   it("creates arrays when numeric writes target missing branches", () => {
     const state = pulse({} as { rows?: string[] });
     const rows = state.rows as unknown as Record<
@@ -401,6 +440,46 @@ describe("pulse", () => {
         },
       ],
     });
+  });
+
+  it("batches exact descendant notifications for multiple ancestor replacements", () => {
+    const state = pulse({
+      rows: [
+        { price: 10, volume: 100 },
+        { price: 20, volume: 200 },
+      ],
+    });
+    const rows = state.rows as unknown as Record<
+      number,
+      {
+        price: { get(): number; on(callback: (value: unknown) => void): void };
+        volume: { get(): number; on(callback: (value: unknown) => void): void };
+        set(nextValue: { price: number; volume: number }): void;
+      }
+    >;
+    const row0PriceListener = vi.fn();
+    const row0VolumeListener = vi.fn();
+    const row1PriceListener = vi.fn();
+    const row1VolumeListener = vi.fn();
+
+    rows[0].price.on(row0PriceListener);
+    rows[0].volume.on(row0VolumeListener);
+    rows[1].price.on(row1PriceListener);
+    rows[1].volume.on(row1VolumeListener);
+
+    state.batch(() => {
+      rows[0].set({ price: 11, volume: 110 });
+      rows[1].set({ price: 21, volume: 210 });
+    });
+
+    expect(row0PriceListener).toHaveBeenCalledTimes(1);
+    expect(row0VolumeListener).toHaveBeenCalledTimes(1);
+    expect(row1PriceListener).toHaveBeenCalledTimes(1);
+    expect(row1VolumeListener).toHaveBeenCalledTimes(1);
+    expect(rows[0].price.get()).toBe(11);
+    expect(rows[0].volume.get()).toBe(110);
+    expect(rows[1].price.get()).toBe(21);
+    expect(rows[1].volume.get()).toBe(210);
   });
 
   it("keeps the first previous value and latest current value for repeated exact writes in a batch", () => {

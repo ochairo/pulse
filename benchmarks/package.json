@@ -5,14 +5,12 @@
   "scripts": {
     "pulse": "node ./runtime.mjs",
     "compare": "node ./compare.mjs",
-    "report": "node ./report.mjs --preset=quick",
-    "report:compare": "node ./report.mjs --preset=quick --compare-only",
-    "report:full": "node ./report.mjs --preset=full",
-    "report:pulse": "node ./report.mjs --preset=quick --pulse-only"
+    "report:smoke": "node ./report.mjs --preset=smoke",
+    "report": "node ./report.mjs --preset=report",
+    "report:full": "node ./report.mjs --preset=full"
   },
   "dependencies": {
     "@legendapp/state": "beta",
-    "mobx": "^6.13.7",
     "valtio": "^2.3.1"
   }
 }

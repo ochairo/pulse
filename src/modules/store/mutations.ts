@@ -1,9 +1,5 @@
 import type { PulseMutation } from "../contract/types.js";
-import {
-  ARRAY_LENGTH_SEGMENT,
-  getPulsePathKey,
-  type PulsePath,
-} from "../path/index.js";
+import { ARRAY_LENGTH_SEGMENT, type PulsePath } from "../path/index.js";
 import {
   getEnumerableOwnKeys,
   isPlainObject,
@@ -22,14 +18,16 @@ export function collectPulseMutationsAtPaths(
     return [];
   }
 
-  const uniquePaths = new Map<string, PulsePath>();
+  const uniquePathRoot = createUniquePathNode();
+  const uniquePaths: PulsePath[] = [];
 
   for (const path of paths) {
-    uniquePaths.set(getPulsePathKey(path), path);
+    addUniquePath(uniquePathRoot, path, uniquePaths);
     collectChangedArrayLengthPaths(
       previousRootValue,
       currentRootValue,
       path,
+      uniquePathRoot,
       uniquePaths,
     );
   }
@@ -38,7 +36,7 @@ export function collectPulseMutationsAtPaths(
   const previousCache = createValueStatePathCache(previousRootValue);
   const currentCache = createValueStatePathCache(currentRootValue);
 
-  for (const path of uniquePaths.values()) {
+  for (const path of uniquePaths) {
     collectMutations(
       readCachedValueStateAtPath(previousCache, path),
       readCachedValueStateAtPath(currentCache, path),
@@ -50,11 +48,50 @@ export function collectPulseMutationsAtPaths(
   return mutations;
 }
 
+interface UniquePathNode {
+  children: Map<PropertyKey, UniquePathNode>;
+  path: PulsePath | null;
+}
+
+function createUniquePathNode(): UniquePathNode {
+  return {
+    children: new Map(),
+    path: null,
+  };
+}
+
+function addUniquePath(
+  root: UniquePathNode,
+  path: PulsePath,
+  orderedPaths: PulsePath[],
+): void {
+  let currentNode = root;
+
+  for (const segment of path) {
+    let nextNode = currentNode.children.get(segment);
+
+    if (!nextNode) {
+      nextNode = createUniquePathNode();
+      currentNode.children.set(segment, nextNode);
+    }
+
+    currentNode = nextNode;
+  }
+
+  if (currentNode.path) {
+    return;
+  }
+
+  currentNode.path = path;
+  orderedPaths.push(path);
+}
+
 function collectChangedArrayLengthPaths(
   previousRootValue: unknown,
   currentRootValue: unknown,
   path: PulsePath,
-  uniquePaths: Map<string, PulsePath>,
+  uniquePathRoot: UniquePathNode,
+  uniquePaths: PulsePath[],
 ): void {
   let previousState = readExistingValue(previousRootValue);
   let currentState = readExistingValue(currentRootValue);
@@ -70,7 +107,7 @@ function collectChangedArrayLengthPaths(
       previousState.value.length !== currentState.value.length
     ) {
       const lengthPath = [...traversedPath, ARRAY_LENGTH_SEGMENT];
-      uniquePaths.set(getPulsePathKey(lengthPath), lengthPath);
+      addUniquePath(uniquePathRoot, lengthPath, uniquePaths);
     }
 
     traversedPath.push(segment);
@@ -102,7 +139,8 @@ function readCachedValueStateAtPath(
   path: PulsePath,
 ): ValueState {
   const commonPrefixLength = getCommonPrefixLength(cache.path, path);
-  const states = cache.states.slice(0, commonPrefixLength + 1);
+  const states = cache.states;
+  states.length = commonPrefixLength + 1;
   let currentState = states[states.length - 1] as ValueState;
 
   for (let index = commonPrefixLength; index < path.length; index += 1) {
@@ -234,6 +272,19 @@ function collectArrayMutations(
       continue;
     }
 
+    if (
+      canCollectArrayElementAsReplaceMutation(previousElement, currentElement)
+    ) {
+      mutations.push({
+        kind: "replace",
+        path: [...path, index],
+        key: index,
+        value: currentElement,
+        previousValue: previousElement,
+      });
+      continue;
+    }
+
     collectMutations(
       readExistingValue(previousElement),
       readExistingValue(currentElement),
@@ -340,4 +391,18 @@ function collectObjectMutations(
 
 function getPathKey(path: PulsePath): PropertyKey | undefined {
   return path.length === 0 ? undefined : path[path.length - 1];
+}
+
+function canCollectArrayElementAsReplaceMutation(
+  previousValue: unknown,
+  currentValue: unknown,
+): boolean {
+  return (
+    isStructuredMutationValue(previousValue) &&
+    isStructuredMutationValue(currentValue)
+  );
+}
+
+function isStructuredMutationValue(value: unknown): boolean {
+  return Array.isArray(value) || isPlainObject(value);
 }

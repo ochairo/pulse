@@ -11,9 +11,6 @@ importers:
       '@legendapp/state':
         specifier: beta
         version: 3.0.0-beta.46(react@19.2.4)
-      mobx:
-        specifier: ^6.13.7
-        version: 6.15.0
       valtio:
         specifier: ^2.3.1
         version: 2.3.1(react@19.2.4)
@@ -27,9 +24,6 @@ packages:
     peerDependenciesMeta:
       expo-sqlite:
         optional: true
-
-  mobx@6.15.0:
-    resolution: {integrity: sha512-UczzB+0nnwGotYSgllfARAqWCJ5e/skuV2K/l+Zyck/H6pJIhLXuBnz+6vn2i211o7DtbE78HQtsYEKICHGI+g==}
 
   proxy-compare@3.0.1:
     resolution: {integrity: sha512-V9plBAt3qjMlS1+nC8771KNf6oJ12gExvaxnNzN/9yVRLdTv/lc+oJlnSzrdYDAvBfTStPCoiaCOTmTs0adv7Q==}
@@ -62,8 +56,6 @@ snapshots:
       use-sync-external-store: 1.6.0(react@19.2.4)
     transitivePeerDependencies:
       - react
-
-  mobx@6.15.0: {}
 
   proxy-compare@3.0.1: {}
 

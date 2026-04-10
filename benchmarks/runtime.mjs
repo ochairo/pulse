@@ -177,6 +177,75 @@ function createPulseLargeTableState(rowCount = 1_000) {
   };
 }
 
+function createPulseBeatSweepMirrorState(rowCount = 10_000) {
+  const rows = pulse(createMarketRows(rowCount));
+  const rowNodes = rows
+    .get()
+    .map((_, index) => rows[index])
+    .filter(Boolean);
+  const sinks = rowNodes.map(() => ({
+    price: 0,
+    change: 0,
+    volume: 0,
+    trades: 0,
+    heat: 0,
+    focused: false,
+  }));
+  const unsubscribers = [];
+
+  for (const [index, row] of rowNodes.entries()) {
+    const sink = sinks[index];
+
+    if (!sink) {
+      continue;
+    }
+
+    unsubscribers.push(
+      row.price.on((event) => {
+        sink.price = event.currentValue;
+      }),
+      row.change.on((event) => {
+        sink.change = event.currentValue;
+      }),
+      row.volume.on((event) => {
+        sink.volume = event.currentValue;
+      }),
+      row.trades.on((event) => {
+        sink.trades = event.currentValue;
+      }),
+      row.heat.on((event) => {
+        sink.heat = event.currentValue;
+      }),
+      row.focused.on((event) => {
+        sink.focused = event.currentValue;
+      }),
+    );
+  }
+
+  return {
+    rows,
+    rowNodes,
+    unsubscribers,
+  };
+}
+
+function runPulseBeatSweepMirror(context) {
+  context.rows.batch(() => {
+    for (const row of context.rowNodes) {
+      const currentRow = row.get();
+
+      row.set({
+        ...currentRow,
+        price: currentRow.price + 1,
+        change: currentRow.change + 0.25,
+        volume: currentRow.volume + 500,
+        trades: currentRow.trades + 1,
+        heat: currentRow.heat >= 99 ? 10 : currentRow.heat + 1,
+      });
+    }
+  });
+}
+
 function replacePulseAllRows(context) {
   context.nextTick += 1;
   context.table.rows.set(
@@ -249,28 +318,6 @@ export function runPulseBenchmarkSuite(options = {}) {
   return runBenchmarkSuite(
     "pulse benchmark",
     [
-      {
-        title: "Read Costs",
-        cases: [
-          {
-            name: "root get",
-            iterations: 25_000,
-            task: () => {
-              const state = pulse({ count: 1 });
-              state.get();
-            },
-          },
-          {
-            name: "deep leaf get",
-            iterations: 10_000,
-            task: () => {
-              const depth = 200;
-              const state = pulse(createDeepState(depth));
-              getDeepLeaf(state, depth).get();
-            },
-          },
-        ],
-      },
       {
         title: "Hot Read Costs",
         cases: [
@@ -684,15 +731,6 @@ export function runPulseBenchmarkSuite(options = {}) {
             },
           },
           {
-            name: "item listener subscribe and unsubscribe",
-            iterations: 5_000,
-            task: () => {
-              const users = pulse(createUsers(2));
-              const unsubscribe = users[0]?.on(() => {});
-              unsubscribe?.();
-            },
-          },
-          {
             name: "market row listener subscribe and unsubscribe",
             iterations: 5_000,
             task: () => {
@@ -702,39 +740,11 @@ export function runPulseBenchmarkSuite(options = {}) {
             },
           },
           {
-            name: "ten leaf listeners subscribe and unsubscribe",
-            iterations: 2_000,
-            task: () => {
-              const users = pulse(createUsers(2));
-              const unsubscribers = Array.from({ length: 10 }, () =>
-                users[0]?.name.on(() => {}),
-              );
-
-              for (const unsubscribe of unsubscribers) {
-                unsubscribe?.();
-              }
-            },
-          },
-          {
             name: "hundred leaf listeners subscribe and unsubscribe",
             iterations: 1_000,
             task: () => {
               const users = pulse(createUsers(2));
               const unsubscribers = Array.from({ length: 100 }, () =>
-                users[0]?.name.on(() => {}),
-              );
-
-              for (const unsubscribe of unsubscribers) {
-                unsubscribe?.();
-              }
-            },
-          },
-          {
-            name: "thousand leaf listeners subscribe and unsubscribe",
-            iterations: 250,
-            task: () => {
-              const users = pulse(createUsers(2));
-              const unsubscribers = Array.from({ length: 1_000 }, () =>
                 users[0]?.name.on(() => {}),
               );
 
@@ -900,26 +910,40 @@ export function runPulseBenchmarkSuite(options = {}) {
             },
           },
           {
-            name: "ten leaf listeners on same node",
-            iterations: 2_000,
+            name: "market row exact child listeners replace in root batch",
+            iterations: 5_000,
             setup: () => {
-              const users = pulse(createUsers(2));
+              const rows = pulse(createMarketRows(64));
+              const row = rows[12];
+
               return {
-                nextValue: 0,
-                users,
-                unsubscribers: Array.from({ length: 10 }, () =>
-                  users[0]?.name.on(() => {}),
-                ),
+                rows,
+                row,
+                unsubscribers: [
+                  row?.price.on(() => {}),
+                  row?.change.on(() => {}),
+                  row?.volume.on(() => {}),
+                  row?.trades.on(() => {}),
+                ],
               };
             },
             task: (context) => {
-              context.nextValue += 1;
-              context.users[0]?.name.set(`Grace ${context.nextValue}`);
+              const currentRow = context.row?.get();
+
+              if (context.row && currentRow) {
+                context.rows.batch(() => {
+                  context.row.set({
+                    ...currentRow,
+                    price: currentRow.price + 1,
+                    change: currentRow.change + 0.25,
+                    volume: currentRow.volume + 500,
+                    trades: currentRow.trades + 1,
+                  });
+                });
+              }
             },
             teardown: (context) => {
-              for (const unsubscribe of context.unsubscribers) {
-                unsubscribe?.();
-              }
+              disposeCallbacks(context.unsubscribers);
             },
           },
           {
@@ -946,26 +970,12 @@ export function runPulseBenchmarkSuite(options = {}) {
             },
           },
           {
-            name: "thousand leaf listeners on same node",
-            iterations: 250,
-            setup: () => {
-              const users = pulse(createUsers(2));
-              return {
-                nextValue: 0,
-                users,
-                unsubscribers: Array.from({ length: 1_000 }, () =>
-                  users[0]?.name.on(() => {}),
-                ),
-              };
-            },
-            task: (context) => {
-              context.nextValue += 1;
-              context.users[0]?.name.set(`Grace ${context.nextValue}`);
-            },
+            name: "beat batched sweep mirror 10000 rows with per-field listeners",
+            iterations: 10,
+            setup: () => createPulseBeatSweepMirrorState(10_000),
+            task: runPulseBeatSweepMirror,
             teardown: (context) => {
-              for (const unsubscribe of context.unsubscribers) {
-                unsubscribe?.();
-              }
+              disposeCallbacks(context.unsubscribers);
             },
           },
         ],

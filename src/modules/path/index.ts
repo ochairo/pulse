@@ -4,6 +4,15 @@ export const ARRAY_LENGTH_SEGMENT = Symbol("pulse.array-length");
 
 export type { PulsePath };
 
+interface PulsePathPrefixMatcherNode {
+  children: Map<PropertyKey, PulsePathPrefixMatcherNode>;
+  terminal: boolean;
+}
+
+export interface PulsePathPrefixMatcher {
+  readonly root: PulsePathPrefixMatcherNode;
+}
+
 export function normalizeChildKey(
   currentValue: unknown,
   property: PropertyKey,
@@ -142,5 +151,74 @@ export function isPathPrefix(prefix: PulsePath, fullPath: PulsePath): boolean {
     return false;
   }
 
-  return prefix.every((segment, index) => Object.is(segment, fullPath[index]));
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (!Object.is(prefix[index], fullPath[index])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+export function createPathPrefixMatcher(
+  paths: readonly PulsePath[],
+): PulsePathPrefixMatcher {
+  const root: PulsePathPrefixMatcherNode = {
+    children: new Map(),
+    terminal: false,
+  };
+
+  for (const path of paths) {
+    let currentNode = root;
+
+    if (path.length === 0) {
+      root.terminal = true;
+      continue;
+    }
+
+    for (const segment of path) {
+      let nextNode = currentNode.children.get(segment);
+
+      if (!nextNode) {
+        nextNode = {
+          children: new Map(),
+          terminal: false,
+        };
+        currentNode.children.set(segment, nextNode);
+      }
+
+      currentNode = nextNode;
+    }
+
+    currentNode.terminal = true;
+  }
+
+  return { root };
+}
+
+export function matchesPathPrefixMatcher(
+  fullPath: PulsePath,
+  matcher: PulsePathPrefixMatcher,
+): boolean {
+  let currentNode = matcher.root;
+
+  if (currentNode.terminal) {
+    return true;
+  }
+
+  for (const segment of fullPath) {
+    const nextNode = currentNode.children.get(segment);
+
+    if (!nextNode) {
+      return false;
+    }
+
+    currentNode = nextNode;
+
+    if (currentNode.terminal) {
+      return true;
+    }
+  }
+
+  return false;
 }
