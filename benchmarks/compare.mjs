@@ -1,6 +1,5 @@
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { pulse } from "../dist/index.js";
 import {
   appendMarketRows,
   createDeepState,
@@ -22,6 +21,8 @@ import {
 
 const require = createRequire(import.meta.url);
 
+let pulse;
+let pulseRuntimeError = null;
 let legendBatch;
 let legendObservable;
 let proxy;
@@ -32,6 +33,12 @@ const ENABLED_COMPARISON_LIBRARIES = new Set([
   "Legend-State",
   "valtio",
 ]);
+
+try {
+  ({ pulse } = await import("../dist/index.js"));
+} catch (error) {
+  pulseRuntimeError = error;
+}
 
 function ensureComparisonDependencies() {
   if (
@@ -55,6 +62,17 @@ function ensureComparisonDependencies() {
       { cause: error },
     );
   }
+}
+
+function ensurePulseRuntime() {
+  if (pulseRuntimeError === null && pulse !== undefined) {
+    return;
+  }
+
+  throw new Error(
+    "Pulse benchmark runtime is not built. Run `pnpm build` before executing comparison benchmarks.",
+    { cause: pulseRuntimeError ?? undefined },
+  );
 }
 
 function parseComparisonLibraryName(benchmarkName) {
@@ -2497,6 +2515,7 @@ export function createComparisonBenchmarkSections() {
 }
 
 export function runComparisonBenchmarkSuite(options = {}) {
+  ensurePulseRuntime();
   ensureComparisonDependencies();
 
   return runBenchmarkSuite(
