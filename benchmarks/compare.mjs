@@ -1,9 +1,5 @@
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import {
-  batch as legendBatch,
-  observable as legendObservable,
-} from "@legendapp/state";
-import { proxy, subscribe } from "valtio/vanilla";
 import { pulse } from "../dist/index.js";
 import {
   appendMarketRows,
@@ -24,11 +20,42 @@ import {
   swapArrayItems,
 } from "./shared.mjs";
 
+const require = createRequire(import.meta.url);
+
+let legendBatch;
+let legendObservable;
+let proxy;
+let subscribe;
+
 const ENABLED_COMPARISON_LIBRARIES = new Set([
   "pulse",
   "Legend-State",
   "valtio",
 ]);
+
+function ensureComparisonDependencies() {
+  if (
+    legendBatch !== undefined &&
+    legendObservable !== undefined &&
+    proxy !== undefined &&
+    subscribe !== undefined
+  ) {
+    return;
+  }
+
+  try {
+    ({
+      batch: legendBatch,
+      observable: legendObservable,
+    } = require("@legendapp/state"));
+    ({ proxy, subscribe } = require("valtio/vanilla"));
+  } catch (error) {
+    throw new Error(
+      "Comparison benchmark dependencies are not installed. Run `pnpm --dir ./benchmarks install` before executing comparison benchmarks.",
+      { cause: error },
+    );
+  }
+}
 
 function parseComparisonLibraryName(benchmarkName) {
   if (benchmarkName === "pulse" || benchmarkName.startsWith("pulse ")) {
@@ -1101,7 +1128,7 @@ function createEditableTableComparisonCases() {
         writeLegendCell(state, 42, 511);
       },
     },
-        {
+    {
       name: "valtio 100x730 single cell write",
       iterations: 2_000,
       setup: createValtioTableState,
@@ -1143,7 +1170,7 @@ function createEditableTableComparisonCases() {
         state.dispose?.();
       },
     },
-        {
+    {
       name: "valtio 100x730 single cell write with cell listener",
       iterations: 2_000,
       setup: () => {
@@ -1191,7 +1218,7 @@ function createEditableTableComparisonCases() {
         state.dispose?.();
       },
     },
-        {
+    {
       name: "valtio 100x730 single cell write with row listener",
       iterations: 1_000,
       setup: () => {
@@ -1236,7 +1263,7 @@ function createEditableTableComparisonCases() {
         state.dispose?.();
       },
     },
-        {
+    {
       name: "valtio 100x730 single cell write with root listener",
       iterations: 100,
       setup: () => {
@@ -1312,7 +1339,7 @@ function createEditableTableComparisonCases() {
         }
       },
     },
-        {
+    {
       name: "valtio 100x730 visible window listeners and cell write",
       iterations: 250,
       setup: () => {
@@ -1367,7 +1394,7 @@ function createEditableTableComparisonCases() {
         }
       },
     },
-        {
+    {
       name: "valtio 100x730 first month write across first 50 rows",
       iterations: 50,
       setup: () => createValtioBulkState(false),
@@ -1406,7 +1433,7 @@ function createEditableTableComparisonCases() {
         }
       },
     },
-        {
+    {
       name: "valtio 100x730 first month write across first 50 rows with row listeners",
       iterations: 25,
       setup: () => createValtioBulkState(true),
@@ -1443,7 +1470,7 @@ export function createComparisonBenchmarkSections() {
             state.state.get();
           },
         },
-                {
+        {
           name: "valtio root read",
           iterations: 25_000,
           setup: createValtioRootSubscriptionState,
@@ -1463,7 +1490,7 @@ export function createComparisonBenchmarkSections() {
           setup: createLegendDeepReadState,
           task: readLegendDeepLeaf,
         },
-                {
+        {
           name: "valtio deep leaf read",
           iterations: 10_000,
           setup: createValtioDeepReadState,
@@ -1481,7 +1508,7 @@ export function createComparisonBenchmarkSections() {
           setup: createLegendTableState,
           task: readLegendTableCell,
         },
-                {
+        {
           name: "valtio table cell read",
           iterations: 25_000,
           setup: createValtioTableState,
@@ -1508,7 +1535,7 @@ export function createComparisonBenchmarkSections() {
             state.key4999.child.grandchild.value.get();
           },
         },
-                {
+        {
           name: "valtio wide graph deep leaf get on fresh state",
           iterations: 500,
           task: () => {
@@ -1540,7 +1567,7 @@ export function createComparisonBenchmarkSections() {
             dispose();
           },
         },
-                {
+        {
           name: "valtio wide graph deep leaf subscribe on fresh state",
           iterations: 500,
           task: () => {
@@ -1574,7 +1601,7 @@ export function createComparisonBenchmarkSections() {
             count$.set(1);
           },
         },
-                {
+        {
           name: "valtio",
           iterations: 10_000,
           task: () => {
@@ -1617,7 +1644,7 @@ export function createComparisonBenchmarkSections() {
             node.leaf.set(1);
           },
         },
-                {
+        {
           name: "valtio",
           iterations: 1_000,
           task: () => {
@@ -1653,7 +1680,7 @@ export function createComparisonBenchmarkSections() {
             users$[0].name.set("Grace");
           },
         },
-                {
+        {
           name: "valtio",
           iterations: 5_000,
           task: () => {
@@ -1686,7 +1713,7 @@ export function createComparisonBenchmarkSections() {
             );
           },
         },
-                {
+        {
           name: "valtio",
           iterations: 1_000,
           task: () => {
@@ -1720,7 +1747,7 @@ export function createComparisonBenchmarkSections() {
             context.dispose();
           },
         },
-                {
+        {
           name: "valtio head insert with visible window consumer",
           iterations: 1_000,
           setup: createValtioArrayReindexState,
@@ -1747,7 +1774,7 @@ export function createComparisonBenchmarkSections() {
             context.dispose();
           },
         },
-                {
+        {
           name: "valtio head remove with visible window consumer",
           iterations: 1_000,
           setup: createValtioArrayReindexState,
@@ -1775,7 +1802,7 @@ export function createComparisonBenchmarkSections() {
             legendObservable({ rows: createMarketRows(1_000) });
           },
         },
-                {
+        {
           name: "valtio create 1,000 rows",
           iterations: 500,
           task: () => {
@@ -1796,7 +1823,7 @@ export function createComparisonBenchmarkSections() {
             legendObservable({ rows: createMarketRows(10_000) });
           },
         },
-                {
+        {
           name: "valtio create 10,000 rows",
           iterations: 100,
           task: () => {
@@ -1815,7 +1842,7 @@ export function createComparisonBenchmarkSections() {
           setup: () => createLegendLargeTableState(1_000),
           task: replaceLegendLargeTableRows,
         },
-                {
+        {
           name: "valtio replace all 1,000 rows",
           iterations: 500,
           setup: () => createValtioLargeTableState(1_000),
@@ -1833,7 +1860,7 @@ export function createComparisonBenchmarkSections() {
           setup: () => createLegendLargeTableState(1_000),
           task: updateLegendEveryTenthLargeTableRow,
         },
-                {
+        {
           name: "valtio partial update every 10th row in 1,000 rows",
           iterations: 500,
           setup: () => createValtioLargeTableState(1_000),
@@ -1851,7 +1878,7 @@ export function createComparisonBenchmarkSections() {
           setup: () => createLegendLargeTableState(1_000),
           task: selectLegendLargeTableRow,
         },
-                {
+        {
           name: "valtio select focused row in 1,000 rows",
           iterations: 1_000,
           setup: () => createValtioLargeTableState(1_000),
@@ -1869,7 +1896,7 @@ export function createComparisonBenchmarkSections() {
           setup: () => createLegendLargeTableState(1_000),
           task: swapLegendLargeTableRows,
         },
-                {
+        {
           name: "valtio swap two rows in 1,000 rows",
           iterations: 500,
           setup: () => createValtioLargeTableState(1_000),
@@ -1887,7 +1914,7 @@ export function createComparisonBenchmarkSections() {
           setup: () => createLegendLargeTableState(1_000),
           task: removeLegendLargeTableRow,
         },
-                {
+        {
           name: "valtio remove one row from 1,000 rows",
           iterations: 500,
           setup: () => createValtioLargeTableState(1_000),
@@ -1905,7 +1932,7 @@ export function createComparisonBenchmarkSections() {
           setup: () => createLegendLargeTableState(10_000),
           task: appendLegendLargeTableRows,
         },
-                {
+        {
           name: "valtio append 1,000 rows to 10,000 rows",
           iterations: 100,
           setup: () => createValtioLargeTableState(10_000),
@@ -1923,7 +1950,7 @@ export function createComparisonBenchmarkSections() {
           setup: () => createLegendLargeTableState(1_000),
           task: clearLegendLargeTableRows,
         },
-                {
+        {
           name: "valtio clear 1,000 rows",
           iterations: 1_000,
           setup: () => createValtioLargeTableState(1_000),
@@ -1948,7 +1975,7 @@ export function createComparisonBenchmarkSections() {
           task: writeLegendDerivedSource,
           teardown: teardownLegendDerivedConsumerState,
         },
-                {
+        {
           name: "valtio relevant source write",
           iterations: 5_000,
           setup: createValtioDerivedConsumerState,
@@ -1969,7 +1996,7 @@ export function createComparisonBenchmarkSections() {
           task: writeLegendUnrelatedDerivedSource,
           teardown: teardownLegendDerivedConsumerState,
         },
-                {
+        {
           name: "valtio unrelated source write",
           iterations: 5_000,
           setup: createValtioDerivedConsumerState,
@@ -1990,7 +2017,7 @@ export function createComparisonBenchmarkSections() {
           task: batchWriteLegendDerivedSources,
           teardown: teardownLegendDerivedConsumerState,
         },
-                {
+        {
           name: "valtio batched dual-source write",
           iterations: 3_000,
           setup: createValtioDerivedConsumerState,
@@ -2016,7 +2043,7 @@ export function createComparisonBenchmarkSections() {
           task: batchWriteLegendSameLeafTwice,
           teardown: teardownLegendDerivedConsumerState,
         },
-                {
+        {
           name: "valtio same leaf written twice in coordinated update",
           iterations: 5_000,
           setup: createValtioDerivedConsumerState,
@@ -2042,7 +2069,7 @@ export function createComparisonBenchmarkSections() {
           task: writeLegendSelectedLeaf,
           teardown: teardownLegendListenerSelectivityState,
         },
-                {
+        {
           name: "valtio write one subscribed leaf among 100 listeners",
           iterations: 2_000,
           setup: createValtioListenerSelectivityState,
@@ -2063,7 +2090,7 @@ export function createComparisonBenchmarkSections() {
           task: writeLegendUnselectedLeaf,
           teardown: teardownLegendListenerSelectivityState,
         },
-                {
+        {
           name: "valtio write unsubscribed leaf with 100 unrelated listeners",
           iterations: 2_000,
           setup: createValtioListenerSelectivityState,
@@ -2089,7 +2116,7 @@ export function createComparisonBenchmarkSections() {
             legendObservable(createUsers(100));
           },
         },
-                {
+        {
           name: "valtio",
           iterations: 1_000,
           task: () => {
@@ -2117,7 +2144,7 @@ export function createComparisonBenchmarkSections() {
             users$[9_999].set({ id: 9_999, name: "Grace", age: 30 });
           },
         },
-                {
+        {
           name: "valtio",
           iterations: 1_000,
           task: () => {
@@ -2146,7 +2173,7 @@ export function createComparisonBenchmarkSections() {
             state.session.user.profile.name.set("Ren");
           },
         },
-                {
+        {
           name: "valtio nested object leaf",
           iterations: 3_000,
           task: () => {
@@ -2171,7 +2198,7 @@ export function createComparisonBenchmarkSections() {
           setup: createLegendWorkspaceState,
           task: writeLegendWorkspaceProfileName,
         },
-                {
+        {
           name: "valtio nested object leaf write",
           iterations: 5_000,
           setup: createValtioWorkspaceState,
@@ -2189,7 +2216,7 @@ export function createComparisonBenchmarkSections() {
           setup: createLegendWorkspaceState,
           task: writeLegendWorkspaceTaskDone,
         },
-                {
+        {
           name: "valtio mixed array object leaf write",
           iterations: 3_000,
           setup: createValtioWorkspaceState,
@@ -2207,7 +2234,7 @@ export function createComparisonBenchmarkSections() {
           setup: createLegendWorkspaceState,
           task: writeLegendWorkspacePreferences,
         },
-                {
+        {
           name: "valtio batched sibling object writes",
           iterations: 3_000,
           setup: createValtioWorkspaceState,
@@ -2225,7 +2252,7 @@ export function createComparisonBenchmarkSections() {
           setup: createLegendWorkspaceState,
           task: writeLegendWorkspaceTaskFields,
         },
-                {
+        {
           name: "valtio batched list item multi-field writes",
           iterations: 1_500,
           setup: createValtioWorkspaceState,
@@ -2254,7 +2281,7 @@ export function createComparisonBenchmarkSections() {
             dispose();
           },
         },
-                {
+        {
           name: "valtio",
           iterations: 5_000,
           setup: createValtioRootSubscriptionState,
@@ -2294,7 +2321,7 @@ export function createComparisonBenchmarkSections() {
             state.dispose?.();
           },
         },
-                {
+        {
           name: "valtio",
           iterations: 5_000,
           setup: () => {
@@ -2330,7 +2357,7 @@ export function createComparisonBenchmarkSections() {
             dispose();
           },
         },
-                {
+        {
           name: "valtio",
           iterations: 5_000,
           setup: createValtioLeafSubscriptionState,
@@ -2370,7 +2397,7 @@ export function createComparisonBenchmarkSections() {
             state.dispose?.();
           },
         },
-                {
+        {
           name: "valtio",
           iterations: 5_000,
           setup: () => {
@@ -2420,7 +2447,7 @@ export function createComparisonBenchmarkSections() {
             disposeCallbacks(disposers);
           },
         },
-                {
+        {
           name: "valtio 50 row listeners subscribe and unsubscribe",
           iterations: 500,
           setup: createValtioTableState,
@@ -2452,7 +2479,7 @@ export function createComparisonBenchmarkSections() {
             disposeCallbacks(attachLegendVisibleWindowListeners(state.table));
           },
         },
-                {
+        {
           name: "valtio visible window listeners subscribe and unsubscribe",
           iterations: 100,
           setup: createValtioTableState,
@@ -2470,6 +2497,8 @@ export function createComparisonBenchmarkSections() {
 }
 
 export function runComparisonBenchmarkSuite(options = {}) {
+  ensureComparisonDependencies();
+
   return runBenchmarkSuite(
     "comparison benchmark",
     createComparisonBenchmarkSections(),
