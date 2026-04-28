@@ -2,7 +2,7 @@
 
 <div align="center">
 
-# <img src="./assets/pulse-logo.svg" alt="pulse logo" width="32" height="16"> pulse
+# pulse
 
 Reacts where you watch.<br>
 _Deep, exact-path reactivity for plain objects and arrays._
