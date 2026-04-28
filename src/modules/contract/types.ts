@@ -1,4 +1,4 @@
-export const PULSE_BRAND = Symbol("pulse.brand");
+export const PULSE_BRAND = Symbol.for("@ochairo/pulse.brand");
 
 export type PulsePath = readonly PropertyKey[];
 
