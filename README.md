@@ -7,6 +7,11 @@
 Reacts where you watch.<br>
 _Deep, exact-path reactivity for plain objects and arrays._
 
+[![npm version](https://img.shields.io/npm/v/@ochairo/pulse)](https://www.npmjs.com/package/@ochairo/pulse)
+[![npm downloads](https://img.shields.io/npm/dm/@ochairo/pulse)](https://www.npmjs.com/package/@ochairo/pulse)
+![CI](https://github.com/ochairo/pulse/workflows/validate/badge.svg)
+![License](https://img.shields.io/badge/license-MIT-blue)
+
 </div>
 
 ## Concept
