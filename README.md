@@ -69,16 +69,32 @@ state.users.on(() => {
 - `get()` reads exactly the node you access
 - `set()` writes exactly the node you access
 - `on()` subscribes only to that exact node
+- `derived()` creates a read-only pulse computed from a source
 - ancestor replacement can still notify a descendant if the descendant value actually changed
 
-## Documentation
+## Derived Values
 
-- [API](./docs/API.md)
+`derived` creates a read-only reactive value that updates when the source changes:
 
-<br>
+```ts
+import { pulse, derived } from "@ochairo/pulse";
 
-<div align="center">
+const count = pulse(0);
+const isPositive = derived(count, (v) => v > 0);
 
-[Report Bug](https://github.com/ochairo/pulse/issues) • [Request Feature](https://github.com/ochairo/pulse/issues)
+console.log(isPositive.get()); // false
 
-</div>
+count.set(5);
+console.log(isPositive.get()); // true
+
+// Subscribe to changes
+isPositive.on((event) => {
+  console.log(event.currentValue); // only fires when the derived value actually changes
+});
+
+// Cleanup when done
+isPositive.destroy();
+```
+
+`derived` skips notifications when the computed value is unchanged (`Object.is`).
+The returned `ReadonlyPulse` is recognized by `isPulse()` and works with Beat's `Show`, `For`, and other reactive bindings.
