@@ -54,7 +54,7 @@ export interface PulseNodeState<TRoot, TValue> {
   readonly runtime: PulseRuntime<TRoot>;
   readonly parent: PulseNodeState<TRoot, unknown> | null;
   proxy?: Pulse<TValue>;
-  setAccessor?: (nextValue: TValue) => void;
+  setAccessor?: (nextValue: TValue | ((current: TValue) => TValue)) => void;
 }
 
 const EMPTY_CHILDREN = new Map<PropertyKey, PulseNodeState<unknown, unknown>>();

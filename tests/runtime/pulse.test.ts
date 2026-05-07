@@ -946,4 +946,34 @@ describe("pulse", () => {
 
     expect(nameListener).toHaveBeenCalledTimes(1);
   });
+
+  it("accepts an updater function in set()", () => {
+    const count = pulse(0);
+
+    count.set((n) => n + 1);
+    expect(count.get()).toBe(1);
+
+    count.set((n) => n + 1);
+    expect(count.get()).toBe(2);
+  });
+
+  it("updater function in set() receives the current value", () => {
+    const state = pulse({ score: 10 });
+
+    state.score.set((n) => n * 2);
+    expect(state.score.get()).toBe(20);
+  });
+
+  it("updater function in set() notifies listeners with correct values", () => {
+    const count = pulse(5);
+    const listener = vi.fn();
+
+    count.on(listener);
+    count.set((n) => n + 3);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ currentValue: 8, previousValue: 5 }),
+    );
+  });
 });

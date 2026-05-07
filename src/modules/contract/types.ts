@@ -31,7 +31,7 @@ interface PulseCore<T> {
   prop<TKey extends PulseChildKey<T>>(
     key: TKey,
   ): Pulse<PulseChildValue<T, TKey>>;
-  set(nextValue: T): void;
+  set(nextValue: T | ((current: T) => T)): void;
   on(callback: (event: PulseChangeEvent<T>) => void): () => void;
 }
 

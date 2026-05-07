@@ -131,8 +131,15 @@ function isSupportedArrayPropKey(key: PropertyKey): boolean {
 
 function getNodeSetAccessor<T>(
   node: PulseNodeState<unknown, T>,
-): (nextValue: T) => void {
-  node.setAccessor ??= (nextValue: T) => writeNodeValue(node, nextValue);
+): (nextValue: T | ((current: T) => T)) => void {
+  node.setAccessor ??= (nextValue: T | ((current: T) => T)) => {
+    const current = readNodeValue(node) as T;
+    const resolvedValue =
+      typeof nextValue === "function" && typeof current !== "function"
+        ? (nextValue as (current: T) => T)(current)
+        : (nextValue as T);
+    writeNodeValue(node, resolvedValue);
+  };
   return node.setAccessor;
 }
 
