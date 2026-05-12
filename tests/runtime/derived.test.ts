@@ -58,6 +58,18 @@ describe("derived", () => {
     expect(upper.get()).toBe("GRACE");
   });
 
+  it("supports deriving from a readonly derived pulse", () => {
+    const count = pulse(2);
+    const doubled = derived(count, (v) => v * 2);
+    const label = derived(doubled, (v) => `x${v}`);
+
+    expect(label.get()).toBe("x4");
+
+    count.set(3);
+
+    expect(label.get()).toBe("x6");
+  });
+
   it("works with object source and primitive output", () => {
     const state = pulse({ count: 0, label: "items" });
     const hasItems = derived(state, (v) => v.count > 0);

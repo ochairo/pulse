@@ -9,11 +9,11 @@ export interface ReadonlyPulse<T> {
   readonly [PULSE_BRAND]: true;
   get(): T;
   on(callback: (event: PulseChangeEvent<T>) => void): () => void;
-  destroy(): void;
+  destroy?(): void;
 }
 
 export function derived<T, U>(
-  source: Pulse<T>,
+  source: Pulse<T> | ReadonlyPulse<T>,
   fn: (value: T) => U,
 ): ReadonlyPulse<U> {
   const internal = createPulse(fn(source.get()));
