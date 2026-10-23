@@ -58,6 +58,11 @@ export function subscribeToNode<T>(
 
     node.listenerSnapshot = null;
     node.singleListenerEntry = readSingleListener(node.listeners);
+    if (node.singleListenerEntry) {
+      // Singleton and Set storage must be exclusive so its disposer removes
+      // the last reference and later subscriptions restore the subtree count.
+      node.listeners.clear();
+    }
 
     if (!hasLocalListeners(node)) {
       adjustListenerNodeTreeSize(node, -1);

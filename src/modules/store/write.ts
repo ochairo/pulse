@@ -490,7 +490,14 @@ export function writeChildValue(
     return;
   }
 
-  container[segment] = nextChildValue;
+  // Dynamic keys are data: assignment to __proto__ would invoke an inherited
+  // setter instead of creating the requested own property.
+  Object.defineProperty(container, segment, {
+    value: nextChildValue,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  });
 }
 
 function normalizeArrayLength(value: unknown): number {
