@@ -25,6 +25,14 @@ It keeps reads, writes, and subscriptions scoped to the concrete node you access
 pnpm add @ochairo/pulse
 ```
 
+## Upgrading to 2.0.0
+
+Node.js consumers now require Node 24.22.1 or later within the 24.x line, or
+Node 26.12.1 or later. Update Node before installing this major release.
+Dynamic writes, including `__proto__`, create own data properties rather than
+changing the state object's prototype. Unsubscribed listeners no longer remain
+in the internal listener set after it collapses to a single listener.
+
 ## Quick Start
 
 ```ts
